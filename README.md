@@ -44,11 +44,21 @@ lbr-cad-tools/
 |   |-- BajaAddIn.Core/   # SolidWorks-free logic (CSV, naming, rules, geometry, settings), unit tested
 |-- tests/                # Unit tests for BajaAddIn.Core (run in CI)
 |-- tools/SwSmokeTest/    # Drives a real SolidWorks to test the add-in's feature code (Windows only)
-|-- scripts/              # register.ps1 / unregister.ps1
+|-- scripts/              # register.ps1 / unregister.ps1 (developers), package.ps1 (release zip)
+|-- installer/            # Install.cmd / Uninstall.cmd and their scripts, shipped in the release zip
 |-- docs/
 |   |-- PLAN.md             # Architecture, API approach, per-feature notes, open questions
 |   |-- rules-reference.md  # Baja SAE rule values used by the tools (B.12.2 tab table, etc.)
 ```
+
+## Install (team members)
+
+1. Close SolidWorks.
+2. Download the latest `LBR-CAD-Tools-<version>.zip` from the Releases page of this repository and unzip it.
+3. Double-click `Install.cmd` and click Yes when Windows asks for permission.
+4. Start SolidWorks: the **LBR CAD Tools** tab appears in parts, assemblies, and drawings.
+
+To update, run `Install.cmd` from the newer version (settings are kept). To remove, run `Uninstall.cmd`.
 
 ## Requirements
 
@@ -65,6 +75,8 @@ lbr-cad-tools/
 5. To remove it: `.\scripts\unregister.ps1`.
 
 If Windows refuses to run the scripts, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. If the tab does not show up, read `%LOCALAPPDATA%\LBR CAD Tools\BajaAddIn.log`.
+
+Release zip: `.\scripts\package.ps1` builds Release and writes `dist\LBR-CAD-Tools-<version>.zip` (version from `Directory.Build.props`). The zip carries the SolidWorks interop assemblies the add-in was built against, from the local `api\redist` folder, because the add-in binds to those exact versions.
 
 Tests: `dotnet test LbrCadTools.CI.slnf` runs the unit tests (also in CI). With SolidWorks closed, `tools\SwSmokeTest\bin\Debug\net48\SwSmokeTest.exe` runs the SolidWorks checks.
 
