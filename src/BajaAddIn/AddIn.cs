@@ -36,8 +36,12 @@ namespace Lbr.CadTools.AddIn
         private int cookie;
         private List<IAddInCommand> commands = new List<IAddInCommand>();
 
+        // List order is button order. Changing the list rebuilds the command
+        // group on the next load (see AddCommandGroup).
         private static List<IAddInCommand> CreateCommands() => new List<IAddInCommand>
         {
+            new SetFixedStateCommand(fix: true),
+            new SetFixedStateCommand(fix: false),
             new AboutCommand(),
         };
 
