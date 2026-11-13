@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using Lbr.CadTools.AddIn.Features.AddInConfig;
 using Lbr.CadTools.AddIn.Features.AutoSave;
 using Lbr.CadTools.AddIn.Features.BatchExport;
 using Lbr.CadTools.AddIn.Features.FixComponents;
@@ -123,6 +124,7 @@ namespace Lbr.CadTools.SmokeTest
                     BatchExportTest(app, dir);
                     app.CloseAllDocuments(true);
                     AutoSaveTest(app, dir);
+                    AddInConfigTest(app);
                 }
                 finally
                 {
@@ -490,6 +492,57 @@ namespace Lbr.CadTools.SmokeTest
             Check(ran && AutoSaver.IsBusy(app, out busy), $"busy while the Fillet PropertyManager is open ({busy})");
             app.RunCommand(-1 /* swCommands_PmCancel */, "");
             Check(!AutoSaver.IsBusy(app, out busy), $"idle again after cancel (got {busy})");
+        }
+
+        // ---- Add-in config (issue #9) ----
+
+        private static void AddInConfigTest(ISldWorks app)
+        {
+            Step("Add-in config: registry lookup");
+            List<AddInManager.InstalledAddIn> installed = AddInManager.Installed();
+            foreach (AddInManager.InstalledAddIn a in installed)
+            {
+                Console.WriteLine($"  {a.Title} -> {a.Path ?? "(no path)"}");
+            }
+            Check(installed.Any(a => a.Title == "LBR CAD Tools" && a.Path != null && File.Exists(a.Path)),
+                "LBR CAD Tools found with its DLL path");
+            Check(AddInManager.Resolve("No Such Add-In", installed, out string error) == null && error.Contains("no add-in"),
+                "unknown title reported");
+
+            // A SolidWorks add-in that ships with every install and is off by default here.
+            const string probe = "Presentation Manager";
+            string path = AddInManager.Resolve(probe, installed, out error);
+            if (path == null)
+            {
+                Console.WriteLine($"  {probe} not installed; skipping load/unload ({error})");
+                return;
+            }
+
+            Step($"Add-in config: load and unload {probe}");
+            int load1 = app.LoadAddIn(path);
+            int load2 = app.LoadAddIn(path);
+            int unload1 = app.UnloadAddIn(path);
+            int unload2 = app.UnloadAddIn(path);
+            Console.WriteLine($"  LoadAddIn {load1}, again {load2}; UnloadAddIn {unload1}, again {unload2}");
+            Check(load1 == 0 && load2 == 2 && unload1 == 0 && unload2 == 0, "return codes: load 0 then 2, unload 0 then 0");
+            Check(new[] { load1, load2, unload1, unload2 }.All(c => AddInManager.Describe(probe, true, c) == null),
+                "none of them reported as a problem");
+
+            Step("Add-in config: Apply from settings");
+            string ownClsid = "{" + typeof(Lbr.CadTools.AddIn.AddIn).GUID + "}";
+            var settings = new AddInSettings();
+            settings.LoadAddIns.Add(probe);
+            settings.LoadAddIns.Add("No Such Add-In");
+            List<string> problems = AddInManager.Apply(app, settings, ownClsid);
+            Console.WriteLine("  problems: " + string.Join(" | ", problems));
+            Check(problems.Count == 1 && problems[0].Contains("No Such Add-In"), "load: only the unknown title is a problem");
+
+            settings = new AddInSettings();
+            settings.UnloadAddIns.Add(probe);
+            settings.UnloadAddIns.Add("LBR CAD Tools");
+            problems = AddInManager.Apply(app, settings, ownClsid);
+            Console.WriteLine("  problems: " + string.Join(" | ", problems));
+            Check(problems.Count == 1 && problems[0].Contains("cannot unload itself"), "unload: refuses to unload LBR CAD Tools");
         }
 
         private static void AddSketchLine(IModelDoc2 doc)
