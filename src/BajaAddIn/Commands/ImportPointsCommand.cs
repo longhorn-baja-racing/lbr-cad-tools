@@ -47,7 +47,7 @@ namespace Lbr.CadTools.AddIn.Commands
             LengthUnit unit;
             using (var dialog = new PointFileDialog(import: true, target))
             {
-                if (dialog.ShowDialog(WindowHandle.Of(app)) != DialogResult.OK)
+                if (dialog.ShowDialog(Ui.MainWindow(app)) != DialogResult.OK)
                 {
                     return;
                 }
@@ -69,12 +69,12 @@ namespace Lbr.CadTools.AddIn.Commands
                     sb.Append($"\n  ...and {csv.Errors.Count - MaxListedErrors} more");
                 }
                 sb.Append("\n\nNothing was imported. Fix the file and try again.");
-                PointCommands.Show(app, sb.ToString(), swMessageBoxIcon_e.swMbWarning);
+                Ui.Show(app, sb.ToString(), swMessageBoxIcon_e.swMbWarning);
                 return;
             }
             if (csv.Points.Count == 0)
             {
-                PointCommands.Show(app, $"{Path.GetFileName(path)} has no points.", swMessageBoxIcon_e.swMbWarning);
+                Ui.Show(app, $"{Path.GetFileName(path)} has no points.", swMessageBoxIcon_e.swMbWarning);
                 return;
             }
 
@@ -94,7 +94,7 @@ namespace Lbr.CadTools.AddIn.Commands
                 string was = r.OffPlane == 1 ? "was" : "were";
                 message.Append($"\n{r.OffPlane} {was} not on the sketch plane and {was} projected onto it.");
             }
-            PointCommands.Show(app, message.ToString(),
+            Ui.Show(app, message.ToString(),
                 r.Added < csv.Points.Count || r.OffPlane > 0 ? swMessageBoxIcon_e.swMbWarning : swMessageBoxIcon_e.swMbInformation);
         }
     }
@@ -112,7 +112,5 @@ namespace Lbr.CadTools.AddIn.Commands
             return type == (int)swDocumentTypes_e.swDocPART || type == (int)swDocumentTypes_e.swDocASSEMBLY;
         }
 
-        public static void Show(ISldWorks app, string message, swMessageBoxIcon_e icon) =>
-            app.SendMsgToUser2(message, (int)icon, (int)swMessageBoxBtn_e.swMbOk);
     }
 }

@@ -3,7 +3,6 @@ using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
 using Lbr.CadTools.Core;
-using SolidWorks.Interop.sldworks;
 
 namespace Lbr.CadTools.AddIn.Features.SketchPoints
 {
@@ -189,20 +188,5 @@ namespace Lbr.CadTools.AddIn.Features.SketchPoints
             lastDirectory = Path.GetDirectoryName(Path.GetFullPath(path));
             DialogResult = DialogResult.OK;
         }
-    }
-
-    /// <summary>Lets a SolidWorks frame handle own a WinForms dialog.</summary>
-    internal sealed class WindowHandle : IWin32Window
-    {
-        public WindowHandle(IntPtr handle)
-        {
-            Handle = handle;
-        }
-
-        public IntPtr Handle { get; }
-
-        /// <summary>The SolidWorks main window, or null when it cannot be found.</summary>
-        public static WindowHandle Of(ISldWorks app) =>
-            app.Frame() is IFrame frame ? new WindowHandle(new IntPtr(frame.GetHWndx64())) : null;
     }
 }

@@ -37,7 +37,7 @@ namespace Lbr.CadTools.AddIn.Commands
             ISketch sketch = SketchPointIo.FindSketch(doc);
             if (sketch == null)
             {
-                PointCommands.Show(app,
+                Ui.Show(app,
                     "Open a sketch for editing, or select one in the FeatureManager design tree, then try again.",
                     swMessageBoxIcon_e.swMbInformation);
                 return;
@@ -47,7 +47,7 @@ namespace Lbr.CadTools.AddIn.Commands
             List<Point3> points = SketchPointIo.Export(app, sketch);
             if (points.Count == 0)
             {
-                PointCommands.Show(app, $"{sketchName} has no points.", swMessageBoxIcon_e.swMbInformation);
+                Ui.Show(app, $"{sketchName} has no points.", swMessageBoxIcon_e.swMbInformation);
                 return;
             }
 
@@ -59,7 +59,7 @@ namespace Lbr.CadTools.AddIn.Commands
             LengthUnit unit;
             using (var dialog = new PointFileDialog(import: false, target, suggested))
             {
-                if (dialog.ShowDialog(WindowHandle.Of(app)) != DialogResult.OK)
+                if (dialog.ShowDialog(Ui.MainWindow(app)) != DialogResult.OK)
                 {
                     return;
                 }
@@ -69,7 +69,7 @@ namespace Lbr.CadTools.AddIn.Commands
 
             File.WriteAllText(path, PointCsv.Write(points, unit), new UTF8Encoding(false));
             Log.Info($"{Title}: {points.Count} points from {sketchName} to {path} ({unit})");
-            PointCommands.Show(app,
+            Ui.Show(app,
                 $"Exported {points.Count} {(points.Count == 1 ? "point" : "points")} from {sketchName} to\n{path}",
                 swMessageBoxIcon_e.swMbInformation);
         }
