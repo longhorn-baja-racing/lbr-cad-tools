@@ -44,10 +44,11 @@ lbr-cad-tools/
 |-- src/
 |   |-- BajaAddIn/        # The SolidWorks add-in (.NET Framework 4.8): commands, dialogs, SolidWorks calls
 |   |-- BajaAddIn.Core/   # SolidWorks-free logic (CSV, naming, rules, geometry, settings), unit tested
+|   |-- Setup/            # LBR-CAD-Tools-Setup.exe: one-file installer with the add-in embedded
 |-- tests/                # Unit tests for BajaAddIn.Core (run in CI)
 |-- tools/SwSmokeTest/    # Drives a real SolidWorks to test the add-in's feature code (Windows only)
-|-- scripts/              # register.ps1 / unregister.ps1 (developers), package.ps1 (release zip)
-|-- installer/            # Install.cmd / Uninstall.cmd and their scripts, shipped in the release zip
+|-- tools/IconGen/        # Build helper: draws the Setup icon from src/BajaAddIn/Util/Brand.cs
+|-- scripts/              # register.ps1 / unregister.ps1 (developers), release.ps1 (build + publish)
 |-- docs/
 |   |-- PLAN.md             # Architecture, API approach, per-feature notes, open questions
 |   |-- rules-reference.md  # Baja SAE rule values used by the tools (B.12.2 tab table, etc.)
@@ -56,11 +57,10 @@ lbr-cad-tools/
 ## Install (team members)
 
 1. Close SolidWorks.
-2. Download the latest `LBR-CAD-Tools-<version>.zip` from the Releases page of this repository and unzip it.
-3. Double-click `Install.cmd` and click Yes when Windows asks for permission.
-4. Start SolidWorks: the **LBR CAD Tools** tab appears in parts, assemblies, and drawings.
+2. Download `LBR-CAD-Tools-Setup-<version>.exe` from the [latest release](https://github.com/longhorn-baja-racing/lbr-cad-tools/releases/latest) and run it. Click Yes when Windows asks for permission. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**.
+3. Click **Install**, then start SolidWorks: the **LBR CAD Tools** tab appears in parts, assemblies, and drawings.
 
-To update, run `Install.cmd` from the newer version (settings are kept). To remove, run `Uninstall.cmd`.
+To update, run the newer Setup and click **Update** (settings are kept). To remove, use Windows Settings > Apps > LBR CAD Tools > Uninstall.
 
 ## Requirements
 
@@ -78,7 +78,7 @@ To update, run `Install.cmd` from the newer version (settings are kept). To remo
 
 If Windows refuses to run the scripts, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. If the tab does not show up, read `%LOCALAPPDATA%\LBR CAD Tools\BajaAddIn.log`.
 
-Release zip: `.\scripts\package.ps1` builds Release and writes `dist\LBR-CAD-Tools-<version>.zip` (version from `Directory.Build.props`). The zip carries the SolidWorks interop assemblies the add-in was built against, from the local `api\redist` folder, because the add-in binds to those exact versions.
+Releases: bump `<Version>` in `Directory.Build.props` (in a PR), then on an up-to-date `main` run `.\scripts\release.ps1`. It builds `LBR-CAD-Tools-Setup.exe`, tags `v<version>`, and publishes the GitHub Release with release notes. `-DryRun` only builds into `dist\`. GitHub Actions cannot build it, because the build needs the SolidWorks interop assemblies from a local SolidWorks install. Setup.exe embeds the ones the add-in was built against, since the add-in binds to those exact versions.
 
 Tests: `dotnet test LbrCadTools.CI.slnf` runs the unit tests (also in CI). With SolidWorks closed, `tools\SwSmokeTest\bin\Debug\net48\SwSmokeTest.exe` runs the SolidWorks checks.
 
