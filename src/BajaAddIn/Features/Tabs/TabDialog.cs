@@ -1,146 +1,97 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
+using Lbr.CadTools.AddIn.Commands;
+using Lbr.CadTools.AddIn.Util;
 using Lbr.CadTools.Core;
 
 namespace Lbr.CadTools.AddIn.Features.Tabs
 {
     /// <summary>
-    /// Mounting tab inputs with live B.12.2 checks. Built in code (no designer
-    /// files). Rule breaks are warnings; shape errors disable Generate.
+    /// Mounting tab inputs with live B.12.2 checks and a labeled drawing of the
+    /// tab. Rule breaks are warnings; shape errors disable Generate.
     /// </summary>
-    internal sealed class TabDialog : Form
+    internal sealed class TabDialog : ToolForm
     {
         private static TabInputs last;
         private static LengthUnit lastUnit = LengthUnit.Inch;
 
-        private readonly ComboBox use = new ComboBox();
-        private readonly ComboBox unit = new ComboBox();
-        private readonly RadioButton single = new RadioButton();
-        private readonly RadioButton dbl = new RadioButton();
-        private readonly CheckBox contour = new CheckBox();
-        private readonly CheckBox gapFromTube = new CheckBox();
+        private readonly ComboBox use = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+        private readonly ComboBox unit = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList };
+        private readonly RadioButton single = new RadioButton { Text = "Single", AutoSize = true };
+        private readonly RadioButton dbl = new RadioButton { Text = "Double", AutoSize = true };
+        private readonly CheckBox contour = new CheckBox { AutoSize = true };
+        private readonly CheckBox gapFromTube = new CheckBox { AutoSize = true };
         private readonly Dictionary<string, TextBox> fields = new Dictionary<string, TextBox>();
-        private readonly Label checks = new Label();
-        private readonly Button generate = new Button();
+        private readonly List<Label> unitLabels = new List<Label>();
+        private readonly Label rule;
+        private readonly Label checks;
+        private readonly Button generate;
         private LengthUnit shownUnit;
         private bool loading;
 
-        private static readonly (string Key, string Label)[] Sizes =
-        {
-            ("Bolt", "Bolt diameter D1"),
-            ("Hole", "Hole diameter (close fit)"),
-            ("EndDiameter", "End diameter D2"),
-            ("BaseWidth", "Base width B"),
-            ("Length", "Length L (base to hole center)"),
-            ("Thickness", "Thickness t"),
-            ("Tube", "Tube OD"),
-            ("Gap", "Gap between tabs"),
-        };
-
         public TabDialog()
+            : base("Mounting Tab",
+                "Makes a welded bolt tab part sized from the Baja SAE B.12.2 table and checks the rules as you type. " +
+                "The new part opens unsaved.",
+                ToolIcon.MountingTab, ToolGroup.VehicleDesign, 560)
         {
-            Text = "Mounting Tab (B.12.2)";
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            ShowInTaskbar = false;
-            StartPosition = FormStartPosition.CenterParent;
-            AutoScaleMode = AutoScaleMode.Dpi;
-            Font = SystemFonts.MessageBoxFont;
+            SuspendLayout();
 
-            var grid = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Padding = new Padding(10) };
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200));
-            int row = 0;
-            void Add(string label, Control control)
-            {
-                grid.Controls.Add(new Label { Text = label, AutoSize = true, Anchor = AnchorStyles.Left }, 0, row);
-                control.Dock = DockStyle.Fill;
-                grid.Controls.Add(control, 1, row);
-                row++;
-            }
-
-            use.DropDownStyle = ComboBoxStyle.DropDownList;
+            // ---- What the tab is for ----
             use.Items.AddRange(TabPreset.All.Select(p => (object)p.Name).ToArray());
-            Add("Use", use);
-
-            unit.DropDownStyle = ComboBoxStyle.DropDownList;
             unit.Items.AddRange(new object[] { "Inches", "Millimeters" });
-            Add("Units", unit);
+            var shear = Row(single, dbl);
+            var purpose = new FieldGrid(150, 220);
+            purpose.Add("Holds", use);
+            purpose.Add("Shear", shear, "double = two tabs, bolt between");
+            purpose.Add("Units", unit);
+            rule = Note("", ContentWidth);
+            rule.Margin = new Padding(0, 6, 0, 0);
+            AddSection("What the tab is for",
+                "Choosing what it holds fills in the rule minimum sizes below.",
+                purpose, rule);
 
-            single.Text = "Single";
-            dbl.Text = "Double";
-            single.AutoSize = dbl.AutoSize = true;
-            var shear = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
-            shear.Controls.Add(single);
-            shear.Controls.Add(dbl);
-            Add("Shear", shear);
+            // ---- Size ----
+            var size = new FieldGrid(150, 90);
+            AddSize(size, "Bolt", "Bolt diameter  D1");
+            AddSize(size, "Hole", "Hole diameter");
+            AddSize(size, "EndDiameter", "End diameter  D2");
+            AddSize(size, "BaseWidth", "Base width  B");
+            AddSize(size, "Length", "Length  L");
+            AddSize(size, "Thickness", "Thickness  t");
+            Label holeNote = Note("Hole: close fit is D1 + 1/64 in, centered in the rounded end.\nL runs from the base to the hole center.", 290);
+            holeNote.Margin = new Padding(0, 8, 0, 0);
+            size.AddWide(holeNote);
+            var diagram = new TabDiagram(Accent) { Size = new Size(230, 250), Margin = new Padding(16, 0, 0, 0) };
+            AddSection("Size", "Letters match Figure B-54 in the rule book.", Row(size, diagram));
 
-            foreach ((string key, string label) in Sizes)
-            {
-                if (key == "Gap")
-                {
-                    gapFromTube.Text = "Double shear: gap = tube OD (tabs on either side of the tube)";
-                    gapFromTube.AutoSize = true;
-                    grid.Controls.Add(gapFromTube, 0, row);
-                    grid.SetColumnSpan(gapFromTube, 2);
-                    row++;
-                }
-                var box = new TextBox();
-                fields[key] = box;
-                Add(label, box);
-                if (key == "Gap")
-                {
-                    contour.Text = "Contour the base to the tube OD";
-                    contour.AutoSize = true;
-                    grid.Controls.Add(contour, 0, row);
-                    grid.SetColumnSpan(contour, 2);
-                    row++;
-                }
-            }
+            // ---- Tube ----
+            var tube = new FieldGrid(150, 90);
+            AddSize(tube, "Tube", "Tube OD");
+            gapFromTube.Text = "Double shear: space the tabs by the tube OD (one each side of the tube)";
+            tube.AddWide(gapFromTube);
+            AddSize(tube, "Gap", "Gap between tabs");
+            contour.Text = "Cut the base to fit the tube (contour to the tube OD)";
+            tube.AddWide(contour);
+            AddSection("Tube and spacing", "The tube the tab is welded to.", tube);
 
-            var reset = new Button { Text = "Use rule sizes", AutoSize = true };
+            // ---- Rule check ----
+            checks = StatusBox(ContentWidth);
+            AddSection("Rule check", null, checks);
+
+            // ---- Buttons ----
+            Button reset = AddButton("Reset to rule sizes", left: true);
             reset.Click += (s, e) => Fill(TabInputs.Defaults(SelectedUse), Unit);
-            grid.Controls.Add(reset, 1, row++);
-
-            checks.AutoSize = true;
-            checks.MaximumSize = new Size(440, 0);
-            checks.Margin = new Padding(3, 10, 3, 3);
-            grid.Controls.Add(checks, 0, row);
-            grid.SetColumnSpan(checks, 2);
-            row++;
-
-            var note = new Label
-            {
-                AutoSize = true,
-                MaximumSize = new Size(440, 0),
-                ForeColor = SystemColors.GrayText,
-                Text = "Creates a new part (not saved) with the hole centered in the rounded end. Double shear makes two bodies spaced by the gap. " +
-                       "Weld along the whole base line; no cutouts or lightening holes (B.12.2.2).",
-            };
-            grid.Controls.Add(note, 0, row);
-            grid.SetColumnSpan(note, 2);
-            row++;
-
-            generate.Text = "Generate";
-            generate.AutoSize = true;
+            generate = AddButton("Generate", primary: true);
             generate.Click += (s, e) => Accept();
-            var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
-            var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill };
-            buttons.Controls.Add(cancel);
-            buttons.Controls.Add(generate);
-            grid.Controls.Add(buttons, 0, row);
-            grid.SetColumnSpan(buttons, 2);
-
-            Controls.Add(grid);
+            Button cancel = AddButton("Cancel", DialogResult.Cancel);
             AcceptButton = generate;
             CancelButton = cancel;
-            AutoSize = true;
-            AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
             Fill(last ?? TabInputs.Defaults(TabUse.LapBelt), lastUnit);
 
@@ -165,6 +116,7 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             {
                 box.TextChanged += (s, e) => UpdateChecks();
             }
+            ResumeLayout(true);
         }
 
         public TabInputs Inputs { get; private set; }
@@ -173,12 +125,25 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
 
         private LengthUnit Unit => unit.SelectedIndex == 1 ? LengthUnit.Millimeter : LengthUnit.Inch;
 
+        private string UnitSymbol => shownUnit == LengthUnit.Millimeter ? "mm" : "in";
+
+        private void AddSize(FieldGrid grid, string key, string label)
+        {
+            var box = new TextBox { TextAlign = HorizontalAlignment.Right };
+            fields[key] = box;
+            unitLabels.Add(grid.Add(label, box));
+        }
+
         private void Fill(TabInputs t, LengthUnit u)
         {
             loading = true;
             use.SelectedIndex = TabPreset.All.ToList().FindIndex(p => p.Use == t.Use);
             unit.SelectedIndex = u == LengthUnit.Millimeter ? 1 : 0;
             shownUnit = u;
+            foreach (Label l in unitLabels)
+            {
+                l.Text = UnitSymbol;
+            }
             single.Checked = !t.DoubleShear;
             dbl.Checked = t.DoubleShear;
             contour.Checked = t.ContourTubeDiameter > 0;
@@ -191,8 +156,32 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             Set("Thickness", t.Thickness);
             Set("Gap", t.Gap);
             Set("Tube", t.TubeDiameter);
+            rule.Text = RuleSummary(TabPreset.For(t.Use));
             loading = false;
             UpdateChecks();
+        }
+
+        private string RuleSummary(TabPreset p)
+        {
+            if (p.Use == TabUse.Custom)
+            {
+                return "Custom: only the shape is checked, not the rules.";
+            }
+            string Len(double meters) =>
+                Units.FromMeters(meters, shownUnit).ToString(shownUnit == LengthUnit.Inch ? "0.####" : "0.#", CultureInfo.InvariantCulture) +
+                " " + UnitSymbol;
+            var parts = new List<string>
+            {
+                p.MinBolt.HasValue ? "bolt at least " + Len(p.MinBolt.Value) : "bolt size from its bracket",
+                "L at most " + Len(p.MaxLength),
+                "t at least " + Len(p.MinThickness),
+            };
+            if (p.DoubleShear)
+            {
+                parts.Add("double shear");
+            }
+            parts.Add("weld " + p.Weld);
+            return "B.12.2 for a " + p.Name.ToLowerInvariant() + " tab: " + string.Join(", ", parts) + ".";
         }
 
         private void Set(string key, double meters)
@@ -238,8 +227,7 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
 
             if (!TryRead(out TabInputs t))
             {
-                checks.ForeColor = Color.Firebrick;
-                checks.Text = "Enter numbers with a '.' decimal point.";
+                SetStatus(checks, "Enter numbers with a '.' decimal point.", Bad, BadBack);
                 generate.Enabled = false;
                 return;
             }
@@ -248,15 +236,21 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             generate.Enabled = !errors;
             if (issues.Count == 0)
             {
-                checks.ForeColor = Color.DarkGreen;
-                checks.Text = t.Use == TabUse.Custom ? "Shape OK (custom: no rule checks)." : "Meets B.12.2.";
+                SetStatus(checks,
+                    t.Use == TabUse.Custom ? "Shape OK. Custom tabs are not checked against the rules." : "Meets B.12.2. Ready to generate.",
+                    Good, GoodBack);
+            }
+            else if (errors)
+            {
+                SetStatus(checks, "Cannot build this shape:\n" + Bullets(issues.Where(i => i.Level == TabIssueLevel.Error)), Bad, BadBack);
             }
             else
             {
-                checks.ForeColor = errors ? Color.Firebrick : Color.DarkGoldenrod;
-                checks.Text = string.Join("\n", issues.Select(i => (i.Level == TabIssueLevel.Error ? "Cannot build: " : "Rule: ") + i.Message));
+                SetStatus(checks, "Does not meet B.12.2 (you can still generate it):\n" + Bullets(issues), Caution, CautionBack);
             }
         }
+
+        private static string Bullets(IEnumerable<TabIssue> issues) => string.Join("\n", issues.Select(i => "  - " + i.Message));
 
         private void Accept()
         {
@@ -268,6 +262,135 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             last = t;
             lastUnit = shownUnit;
             DialogResult = DialogResult.OK;
+        }
+
+        /// <summary>Front view of a tab on its tube with the B.12.2 letters (D1, D2, B, L).</summary>
+        private sealed class TabDiagram : Control
+        {
+            private readonly Color accent;
+
+            public TabDiagram(Color accent)
+            {
+                this.accent = accent;
+                SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
+                         ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                Graphics g = e.Graphics;
+                g.Clear(Color.FromArgb(0xFA, 0xFA, 0xFB));
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+                float k = Math.Min(Width / 230f, Height / 250f);
+                g.ScaleTransform(k, k);
+
+                using (var border = new Pen(RuleLine))
+                {
+                    g.DrawRectangle(border, 0, 0, 229, 249);
+                }
+
+                // Geometry (diagram units): end circle, base line on the tube.
+                var c = new PointF(115, 82);
+                const float r = 36, hole = 14, baseY = 186, half = 62;
+                var left = new PointF(c.X - half, baseY);
+                var right = new PointF(c.X + half, baseY);
+                float aLeft = Tangent(left, c, r, leftSide: true);
+                float aRight = Tangent(right, c, r, leftSide: false);
+
+                using (var tube = new SolidBrush(Color.FromArgb(0xE3, 0xE6, 0xE8)))
+                {
+                    g.FillRectangle(tube, 14, baseY, 202, 18);
+                }
+                using (var path = new GraphicsPath())
+                using (var fill = new SolidBrush(Color.FromArgb(0xF6, 0xE2, 0xD1)))
+                using (var outline = new Pen(accent, 2f))
+                {
+                    path.AddLine(left, OnCircle(c, r, aLeft));
+                    float sweep = aRight - aLeft;
+                    if (sweep < 0)
+                    {
+                        sweep += 360;
+                    }
+                    path.AddArc(c.X - r, c.Y - r, 2 * r, 2 * r, aLeft, sweep);
+                    path.AddLine(OnCircle(c, r, aRight), right);
+                    path.CloseFigure();
+                    g.FillPath(fill, path);
+                    g.DrawPath(outline, path);
+                    g.FillEllipse(Brushes.White, c.X - hole, c.Y - hole, 2 * hole, 2 * hole);
+                    g.DrawEllipse(outline, c.X - hole, c.Y - hole, 2 * hole, 2 * hole);
+                }
+
+                using (var dim = new Pen(Muted, 1f))
+                using (var arrows = new Pen(Muted, 1f) { CustomStartCap = new AdjustableArrowCap(3, 4), CustomEndCap = new AdjustableArrowCap(3, 4) })
+                using (var center = new Pen(Muted, 1f) { DashStyle = DashStyle.DashDot })
+                using (var font = new Font("Segoe UI Semibold", 9f))
+                using (var ink = new SolidBrush(Brand.Ink))
+                using (var muted = new SolidBrush(Muted))
+                using (var small = new Font("Segoe UI", 8f))
+                {
+                    // Center lines through the hole.
+                    g.DrawLine(center, c.X - r - 8, c.Y, c.X + r + 8, c.Y);
+                    g.DrawLine(center, c.X, c.Y - r - 6, c.X, c.Y + r + 8);
+
+                    // D2 across the rounded end, above it.
+                    float d2y = c.Y - r - 18;
+                    g.DrawLine(dim, c.X - r, c.Y, c.X - r, d2y - 4);
+                    g.DrawLine(dim, c.X + r, c.Y, c.X + r, d2y - 4);
+                    g.DrawLine(arrows, c.X - r, d2y, c.X + r, d2y);
+                    Label(g, "D2", font, ink, c.X, d2y - 9);
+
+                    // D1 hole: leader from the upper left.
+                    PointF h = OnCircle(c, hole, 225);
+                    g.DrawLine(dim, h.X, h.Y, 46, 40);
+                    g.DrawLine(dim, 46, 40, 30, 40);
+                    Label(g, "D1", font, ink, 22, 40);
+
+                    // L from the base to the hole center, on the right.
+                    float lx = c.X + half + 14;
+                    g.DrawLine(dim, c.X + r + 10, c.Y, lx + 4, c.Y);
+                    g.DrawLine(dim, right.X + 2, baseY, lx + 4, baseY);
+                    g.DrawLine(arrows, lx, c.Y, lx, baseY);
+                    Label(g, "L", font, ink, lx + 10, (c.Y + baseY) / 2);
+
+                    // B along the base, under the tube.
+                    float by = baseY + 30;
+                    g.DrawLine(dim, left.X, baseY, left.X, by + 4);
+                    g.DrawLine(dim, right.X, baseY, right.X, by + 4);
+                    g.DrawLine(arrows, left.X, by, right.X, by);
+                    Label(g, "B", font, ink, c.X, by + 10);
+
+                    g.DrawString("tube", small, muted, 18, baseY + 2);
+                    g.DrawString("t = plate thickness", small, muted, 8, 4);
+                }
+            }
+
+            private static void Label(Graphics g, string text, Font font, Brush brush, float cx, float cy)
+            {
+                SizeF s = g.MeasureString(text, font);
+                using (var back = new SolidBrush(Color.FromArgb(0xFA, 0xFA, 0xFB)))
+                {
+                    g.FillRectangle(back, cx - s.Width / 2, cy - s.Height / 2, s.Width, s.Height);
+                }
+                g.DrawString(text, font, brush, cx - s.Width / 2, cy - s.Height / 2);
+            }
+
+            private static PointF OnCircle(PointF c, float r, float degrees)
+            {
+                double a = degrees * Math.PI / 180;
+                return new PointF(c.X + r * (float)Math.Cos(a), c.Y + r * (float)Math.Sin(a));
+            }
+
+            /// <summary>Angle (degrees, screen coordinates) of the outer tangent point from <paramref name="p"/> to the circle.</summary>
+            private static float Tangent(PointF p, PointF c, float r, bool leftSide)
+            {
+                double dx = p.X - c.X, dy = p.Y - c.Y;
+                double d = Math.Sqrt(dx * dx + dy * dy);
+                double toP = Math.Atan2(dy, dx);
+                double off = Math.Acos(r / d);
+                double a = leftSide ? toP + off : toP - off;
+                return (float)(a * 180 / Math.PI);
+            }
         }
     }
 }

@@ -5,6 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows.Forms;
+using Lbr.CadTools.AddIn.Commands;
 using Lbr.CadTools.AddIn.Util;
 using Lbr.CadTools.Core;
 
@@ -14,54 +15,42 @@ namespace Lbr.CadTools.AddIn.Features.AddInConfig
     /// Shows where settings.json is, what is wrong with it, and which add-ins
     /// exist on this computer, and applies the file without a restart.
     /// </summary>
-    internal sealed class SettingsDialog : Form
+    internal sealed class SettingsDialog : ToolForm
     {
         private readonly AddIn addIn;
-        private readonly TextBox problems = new TextBox();
+        private readonly Label problems;
 
         public SettingsDialog(AddIn addIn)
+            : base("Settings",
+                "Hide buttons you do not use, load or unload other add-ins when SolidWorks starts, and fix problems in the settings file.",
+                ToolIcon.Settings, ToolGroup.Help, 500)
         {
             this.addIn = addIn;
-            Text = "LBR CAD Tools Settings";
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            ShowInTaskbar = false;
-            StartPosition = FormStartPosition.CenterParent;
-            AutoScaleMode = AutoScaleMode.Dpi;
-            Font = SystemFonts.MessageBoxFont;
-
-            var layout = new FlowLayoutPanel
-            {
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false,
-                AutoSize = true,
-                Padding = new Padding(10),
-                Dock = DockStyle.Fill,
-            };
+            SuspendLayout();
 
             // ---- File ----
-            var path = new TextBox { Text = SettingsStore.FilePath, ReadOnly = true, Width = 500 };
-            var edit = new Button { Text = "Edit in Notepad", AutoSize = true };
+            var path = new TextBox { Text = SettingsStore.FilePath, ReadOnly = true, Width = ContentWidth, Margin = new Padding(0, 0, 0, 6) };
+            var edit = new Button { Text = "Edit in Notepad", AutoSize = true, Margin = new Padding(0, 0, 6, 0) };
             edit.Click += (s, e) => EditFile();
-            var folder = new Button { Text = "Open folder", AutoSize = true };
+            var folder = new Button { Text = "Open folder", AutoSize = true, Margin = Padding.Empty };
             folder.Click += (s, e) => OpenFolder();
-            var fileButtons = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0) };
-            fileButtons.Controls.Add(edit);
-            fileButtons.Controls.Add(folder);
-            layout.Controls.Add(Group("Settings file", path, fileButtons, Note(
-                "commands.hidden: button names to leave off the tab (takes effect at the next SolidWorks start).\n" +
-                "addIns.load / addIns.unload: other add-ins to load or unload when SolidWorks starts, by the titles below " +
-                "or by DLL path. In paths, write \\\\ for each \\.\n" +
-                "autoSave: also set by the Auto-Save button.")));
+            AddSection("Settings file", "All settings live in one JSON file. Edit it, save it, then click Apply now.",
+                path, Row(edit, folder));
+
+            // ---- What can be set ----
+            var keys = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Margin = Padding.Empty };
+            keys.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
+            keys.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            AddKey(keys, "commands.hidden", "Button names to leave off the tab. Takes effect at the next SolidWorks start.");
+            AddKey(keys, "addIns.load", "Other add-ins to load when SolidWorks starts, by title (listed below) or by DLL path. In paths, write \\\\ for each \\.");
+            AddKey(keys, "addIns.unload", "Add-ins to unload when SolidWorks starts, the same way.");
+            AddKey(keys, "autoSave", "Also set by the Auto-Save button.");
+            AddKey(keys, "suspension", "Model axes and tire radius used by Suspension Check.");
+            AddSection("What you can set", null, keys);
 
             // ---- Problems ----
-            problems.Multiline = true;
-            problems.ReadOnly = true;
-            problems.ScrollBars = ScrollBars.Vertical;
-            problems.Width = 500;
-            problems.Height = 90;
-            layout.Controls.Add(Group("Problems", problems));
+            problems = StatusBox(ContentWidth);
+            AddSection("Problems", "Read from the file when SolidWorks started, or when you last clicked Apply now.", problems);
 
             // ---- Add-ins ----
             var list = new TextBox
@@ -69,50 +58,50 @@ namespace Lbr.CadTools.AddIn.Features.AddInConfig
                 Multiline = true,
                 ReadOnly = true,
                 ScrollBars = ScrollBars.Vertical,
-                Width = 500,
+                Width = ContentWidth,
                 Height = 110,
+                BackColor = FooterBack,
                 Text = string.Join("\r\n", AddInManager.Installed().Select(a => a.Title)),
             };
-            layout.Controls.Add(Group("Add-in titles on this computer (as in Tools > Add-Ins)", list));
+            AddSection("Add-ins on this computer", "Titles as in Tools > Add-Ins, for addIns.load and addIns.unload.", list);
 
             // ---- Buttons ----
-            var apply = new Button { Text = "Apply now", AutoSize = true };
+            Button apply = AddButton("Apply now", primary: true);
             apply.Click += (s, e) => ApplyNow();
-            var close = new Button { Text = "Close", AutoSize = true, DialogResult = DialogResult.Cancel };
-            var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 10, 0, 0) };
-            buttons.Controls.Add(close);
-            buttons.Controls.Add(apply);
-            layout.Controls.Add(buttons);
-
-            Controls.Add(layout);
+            Button close = AddButton("Close", DialogResult.Cancel);
             CancelButton = close;
-            AutoSize = true;
-            AutoSizeMode = AutoSizeMode.GrowAndShrink;
             ShowProblems();
+            ResumeLayout(true);
         }
 
-        private static Label Note(string text) => new Label
+        /// <summary>One row of the key table: the JSON key in a code font, then what it does.</summary>
+        private void AddKey(TableLayoutPanel table, string key, string text)
         {
-            Text = text,
-            AutoSize = true,
-            MaximumSize = new Size(500, 0),
-            ForeColor = SystemColors.GrayText,
-            Margin = new Padding(3, 6, 3, 3),
-        };
-
-        private static GroupBox Group(string title, params Control[] controls)
-        {
-            var inner = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Dock = DockStyle.Fill };
-            inner.Controls.AddRange(controls);
-            var group = new GroupBox { Text = title, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Padding = new Padding(8) };
-            group.Controls.Add(inner);
-            return group;
+            int row = table.RowCount++;
+            table.Controls.Add(new Label
+            {
+                Text = key,
+                AutoSize = true,
+                Font = new Font("Consolas", 9f),
+                ForeColor = Brand.Ink,
+                Margin = new Padding(0, 3, 8, 3),
+            }, 0, row);
+            Label what = Note(text, ContentWidth - 140);
+            what.Margin = new Padding(0, 3, 0, 3);
+            table.Controls.Add(what, 1, row);
         }
 
         private void ShowProblems()
         {
             List<string> lines = addIn.SettingsProblems;
-            problems.Text = lines.Count == 0 ? "None." : string.Join("\r\n", lines);
+            if (lines.Count == 0)
+            {
+                SetStatus(problems, "No problems found.", Good, GoodBack);
+            }
+            else
+            {
+                SetStatus(problems, string.Join("\n", lines.Select(l => "- " + l)), Caution, CautionBack);
+            }
         }
 
         private void EditFile()
