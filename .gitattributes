@@ -1,0 +1,21 @@
+# Normalize text line endings in the repository.
+* text=auto eol=lf
+
+# Windows-only files keep CRLF.
+*.sln   text eol=crlf
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# SolidWorks and other binary files.
+*.SLDPRT binary
+*.SLDASM binary
+*.SLDDRW binary
+*.sldprt binary
+*.sldasm binary
+*.slddrw binary
+*.swp    binary
+*.dll    binary
+*.pdf    binary
+*.png    binary
+*.jpg    binary
