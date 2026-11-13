@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using Lbr.CadTools.AddIn.Features.BatchExport;
 using Lbr.CadTools.AddIn.Features.FixComponents;
 using Lbr.CadTools.AddIn.Features.SketchPoints;
 using Lbr.CadTools.Core;
@@ -27,7 +28,7 @@ namespace Lbr.CadTools.SmokeTest
     internal static class Program
     {
         private const double MinFreeCommitGb = 6.0;
-        private const int WatchdogMinutes = 4;
+        private const int WatchdogMinutes = 8;
 
         private static int failures;
 
@@ -117,6 +118,8 @@ namespace Lbr.CadTools.SmokeTest
                     FixComponentsTest(app, dir, keep);
                     app.CloseAllDocuments(true);
                     SketchPointsTest(app, dir, keep);
+                    app.CloseAllDocuments(true);
+                    BatchExportTest(app, dir);
                 }
                 finally
                 {
@@ -329,6 +332,133 @@ namespace Lbr.CadTools.SmokeTest
                 Save(part, Path.Combine(dir, "Points.SLDPRT"));
                 Console.WriteLine($"  Sample CSV for manual import: {csvPath}");
             }
+        }
+
+        // ---- Batch Export (issue #5) ----
+
+        private static void BatchExportTest(ISldWorks app, string dir)
+        {
+            string sub = Path.Combine(dir, "export");
+            Directory.CreateDirectory(sub);
+
+            Step("Building parts, a sheet metal plate, an assembly, and a drawing");
+            string boxA = CreateBoxPart(app, sub, "ExBoxA", 0.040);
+            string boxB = CreateBoxPart(app, sub, "ExBoxB", 0.030);
+            var boxBDoc = (IModelDoc2)app.GetOpenDocumentByName(boxB);
+            boxBDoc.Extension.get_CustomPropertyManager("").Add3("PartNo",
+                (int)swCustomInfoType_e.swCustomInfoText, "LBR-1001",
+                (int)swCustomPropertyAddOption_e.swCustomPropertyReplaceValue);
+            Save(boxBDoc, boxB);
+            string plate = CreateSheetMetalPart(app, sub, "ExPlate");
+            Check(plate != null, "sheet metal base flange created");
+
+            IModelDoc2 top = NewAssembly(app);
+            AddComponent(top, boxA, 0.0);
+            AddComponent(top, boxA, 0.1);
+            AddComponent(top, boxB, 0.2);
+            if (plate != null)
+            {
+                AddComponent(top, plate, 0.3);
+            }
+            string topPath = Save(top, Path.Combine(sub, "ExTop.SLDASM"));
+
+            string drawingPath = CreateDrawing(app, boxA, Path.Combine(sub, "ExBoxA.SLDDRW"));
+            Check(drawingPath != null, "drawing created and closed");
+
+            int errors = 0;
+            app.ActivateDoc3(topPath, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref errors);
+            string topConfig = top.ConfigurationManager.ActiveConfiguration.Name;
+
+            const int stepApPref = (int)swUserPreferenceIntegerValue_e.swStepAP;
+            app.SetUserPreferenceIntegerValue(stepApPref, 203);
+
+            Step("Batch Export: assembly + components + drawings, all formats");
+            var options = new BatchExportOptions
+            {
+                IncludeComponents = true,
+                IncludeDrawings = true,
+                OutputFolder = Path.Combine(sub, "Exports"),
+            };
+            options.Formats.UnionWith(ExportFormats.All);
+            var clock = Stopwatch.StartNew();
+            BatchExportResult r = BatchExporter.Run(app, top, options);
+            Console.WriteLine($"  {clock.Elapsed.TotalSeconds:F0} s; message: " +
+                BatchExportReport.Format(options.OutputFolder, r.Written.Count, r.Failed, r.Notes).Replace("\n", "\n           "));
+            Console.WriteLine("  written: " + string.Join(" ", r.Written.Select(Path.GetFileName)));
+
+            Check(r.Failed.Count == 0, $"no failures (got {r.Failed.Count})");
+            var expected = new List<string>();
+            foreach (string name in new[] { "ExTop", "ExBoxA", "LBR-1001" }.Concat(plate != null ? new[] { "ExPlate" } : new string[0]))
+            {
+                expected.AddRange(new[] { ".step", ".igs", ".x_t", ".stl" }.Select(ext => name + ext));
+            }
+            if (plate != null)
+            {
+                expected.Add("ExPlate-flat.dxf");
+            }
+            expected.Add("ExBoxA.pdf");
+            foreach (string file in expected)
+            {
+                string full = Path.Combine(options.OutputFolder, file);
+                Check(File.Exists(full) && new FileInfo(full).Length > 0, $"{file} written");
+            }
+            Check(Directory.GetFiles(options.OutputFolder, "ExBoxA*.dxf").Length >= 1, "drawing DXF written");
+            Check(!File.Exists(Path.Combine(options.OutputFolder, "ExBoxB.step")), "ExBoxB named by its PartNo, not file name");
+            Check(!File.Exists(Path.Combine(options.OutputFolder, "ExBoxB-flat.dxf")), "no flat pattern for a non-sheet-metal part");
+
+            string stepHeader = File.ReadAllText(Path.Combine(options.OutputFolder, "ExBoxA.step"));
+            Check(stepHeader.IndexOf("AUTOMOTIVE_DESIGN", StringComparison.OrdinalIgnoreCase) >= 0, "STEP is AP214 (AUTOMOTIVE_DESIGN schema)");
+            Check(app.GetUserPreferenceIntegerValue(stepApPref) == 203, "user's STEP AP preference restored");
+
+            var active = app.ActiveDoc as IModelDoc2;
+            Check(active != null && string.Equals(active.GetPathName(), topPath, StringComparison.OrdinalIgnoreCase),
+                $"assembly active again (got {active?.GetTitle()})");
+            Check(top.ConfigurationManager.ActiveConfiguration.Name == topConfig, "assembly configuration unchanged");
+            Check(app.GetOpenDocumentByName(drawingPath) == null, "drawing opened by the export was closed");
+
+            Step("Batch Export again (replaces files)");
+            r = BatchExporter.Run(app, top, options);
+            Check(r.Failed.Count == 0 && r.Written.Count >= expected.Count, $"no failures, {r.Written.Count} written");
+        }
+
+        private static string CreateSheetMetalPart(ISldWorks app, string dir, string name)
+        {
+            IModelDoc2 doc = NewPart(app);
+            IFeature plane = Features(doc).First(f => f.GetTypeName2() == "RefPlane");
+            plane.Select2(false, 0);
+            doc.SketchManager.InsertSketch(true);
+            doc.SketchManager.CreateCornerRectangle(0, 0, 0, 0.060, 0.040, 0);
+            doc.SketchManager.InsertSketch(true);
+            ((IFeature)doc.FeatureByPositionReverse(0)).Select2(false, 0);
+            CustomBendAllowance bend = doc.FeatureManager.CreateCustomBendAllowance();
+            IFeature flange = doc.FeatureManager.InsertSheetMetalBaseFlange2(
+                0.003, false, 0.003, 0, 0, false, 0, 0, 0, bend,
+                false, 1, 0.0005, 0.0005, 0.5, true, false, true, true);
+            if (flange == null)
+            {
+                return null;
+            }
+            return Save(doc, Path.Combine(dir, name + ".SLDPRT"));
+        }
+
+        /// <summary>Drawing with one front view of the model, saved and closed.</summary>
+        private static string CreateDrawing(ISldWorks app, string modelPath, string path)
+        {
+            string template = app.GetUserPreferenceStringValue((int)swUserPreferenceStringValue_e.swDefaultTemplateDrawing);
+            var doc = (IModelDoc2)app.NewDocument(template, (int)swDwgPaperSizes_e.swDwgPaperA3size, 0.42, 0.297);
+            if (doc == null)
+            {
+                Console.WriteLine($"  NewDocument failed for drawing template '{template}'");
+                return null;
+            }
+            IView view = ((IDrawingDoc)doc).CreateDrawViewFromModelView3(modelPath, "*Front", 0.15, 0.15, 0);
+            if (view == null)
+            {
+                Console.WriteLine("  CreateDrawViewFromModelView3 failed");
+            }
+            Save(doc, path);
+            app.CloseDoc(doc.GetTitle());
+            return view == null ? null : path;
         }
 
         private static bool SamePoints(List<Point3> actual, List<Point3> expected, double tol) =>
