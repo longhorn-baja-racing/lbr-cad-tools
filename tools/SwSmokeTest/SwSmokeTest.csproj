@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Drives a hidden SolidWorks instance through the add-in's feature code and
+    checks the results. Windows + SolidWorks only; not part of CI.
+    Run from the repo root with: tools\SwSmokeTest\bin\Debug\net48\SwSmokeTest.exe
+    after dotnet build (close SolidWorks first).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>Lbr.CadTools.SmokeTest</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <Import Project="..\..\build\SolidWorksInterop.props" />
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BajaAddIn\BajaAddIn.csproj" />
+  </ItemGroup>
+</Project>
