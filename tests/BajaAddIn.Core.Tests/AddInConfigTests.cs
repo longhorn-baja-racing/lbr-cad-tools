@@ -61,5 +61,29 @@ namespace Lbr.CadTools.Core.Tests
             Assert.Equal(new[] { "Fix All" }, back.HiddenCommands);
             Assert.Equal(new[] { @"C:\a.dll" }, back.LoadAddIns);
         }
+
+        [Fact]
+        public void Reads_suspension_settings()
+        {
+            var warnings = new List<string>();
+            AddInSettings s = AddInSettings.Parse(
+                "{ \"suspension\": { \"forwardAxis\": \"-X\", \"upAxis\": \"+Z\", \"tireRadiusInches\": 11 } }", warnings);
+            Assert.Empty(warnings);
+            Assert.Equal("-X", s.Suspension.ForwardAxis);
+            Assert.Equal("+Z", s.Suspension.UpAxis);
+            Assert.Equal(11.0, s.Suspension.TireRadiusInches);
+        }
+
+        [Fact]
+        public void Bad_suspension_axes_warn_and_keep_defaults()
+        {
+            var warnings = new List<string>();
+            AddInSettings s = AddInSettings.Parse(
+                "{ \"suspension\": { \"forwardAxis\": \"+Y\", \"upAxis\": \"+Y\", \"tireRadiusInches\": -1 } }", warnings);
+            Assert.Equal(2, warnings.Count);
+            Assert.Equal("+Z", s.Suspension.ForwardAxis);
+            Assert.Equal("+Y", s.Suspension.UpAxis);
+            Assert.Equal(11.5, s.Suspension.TireRadiusInches);
+        }
     }
 }

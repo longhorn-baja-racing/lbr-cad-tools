@@ -23,6 +23,18 @@ namespace Lbr.CadTools.Core
         }
     }
 
+    public sealed class SuspensionSettings
+    {
+        /// <summary>Model axis that points to the front of the car (+X, -Z, ...).</summary>
+        public string ForwardAxis { get; set; } = VehicleAxes.SolidWorksDefault.ForwardAxis;
+
+        /// <summary>Model axis that points up.</summary>
+        public string UpAxis { get; set; } = VehicleAxes.SolidWorksDefault.UpAxis;
+
+        /// <summary>Loaded tire radius in inches (wheel center to ground).</summary>
+        public double TireRadiusInches { get; set; } = 11.5;
+    }
+
     /// <summary>
     /// The add-in settings file (settings.json). Reading is forgiving: a bad or
     /// missing value falls back to its default with a warning, and sections
@@ -33,6 +45,8 @@ namespace Lbr.CadTools.Core
         private readonly Dictionary<string, object> unknown = new Dictionary<string, object>();
 
         public AutoSaveSettings AutoSave { get; } = new AutoSaveSettings();
+
+        public SuspensionSettings Suspension { get; } = new SuspensionSettings();
 
         /// <summary>Titles of LBR CAD Tools buttons to leave off the tab (applies at the next SolidWorks start).</summary>
         public List<string> HiddenCommands { get; } = new List<string>();
@@ -64,6 +78,12 @@ namespace Lbr.CadTools.Core
                 {
                     case "autoSave":
                         ReadAutoSave(pair.Value, settings.AutoSave, warnings);
+                        break;
+                    case "suspension":
+                        if (Section(pair.Value, "suspension", warnings) is Dictionary<string, object> suspension)
+                        {
+                            ReadSuspension(suspension, settings.Suspension, warnings);
+                        }
                         break;
                     case "commands":
                         if (Section(pair.Value, "commands", warnings) is Dictionary<string, object> commands)
@@ -130,6 +150,40 @@ namespace Lbr.CadTools.Core
             }
         }
 
+        private static void ReadSuspension(Dictionary<string, object> obj, SuspensionSettings target, List<string> warnings)
+        {
+            string forward = target.ForwardAxis, up = target.UpAxis;
+            if (obj.TryGetValue("forwardAxis", out object f) && f is string fs)
+            {
+                forward = fs;
+            }
+            if (obj.TryGetValue("upAxis", out object u) && u is string us)
+            {
+                up = us;
+            }
+            try
+            {
+                _ = new VehicleAxes(forward, up);
+                target.ForwardAxis = forward;
+                target.UpAxis = up;
+            }
+            catch (ArgumentException ex)
+            {
+                warnings.Add($"\"suspension\" axes: {ex.Message} Using {target.ForwardAxis} forward, {target.UpAxis} up.");
+            }
+            if (obj.TryGetValue("tireRadiusInches", out object r))
+            {
+                if (r is double d && d > 0)
+                {
+                    target.TireRadiusInches = d;
+                }
+                else
+                {
+                    warnings.Add("\"suspension.tireRadiusInches\" must be a number above 0.");
+                }
+            }
+        }
+
         private static void ReadAutoSave(object value, AutoSaveSettings target, List<string> warnings)
         {
             if (!(value is Dictionary<string, object> obj))
@@ -172,6 +226,12 @@ namespace Lbr.CadTools.Core
                 {
                     ["enabled"] = AutoSave.Enabled,
                     ["intervalMinutes"] = AutoSave.IntervalMinutes,
+                },
+                ["suspension"] = new Dictionary<string, object>
+                {
+                    ["forwardAxis"] = Suspension.ForwardAxis,
+                    ["upAxis"] = Suspension.UpAxis,
+                    ["tireRadiusInches"] = Suspension.TireRadiusInches,
                 },
                 ["commands"] = new Dictionary<string, object>
                 {
