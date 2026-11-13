@@ -34,9 +34,9 @@ baja-cad-tools/
 ## Development Milestones
 
 ### Phase 1: Foundation and Quick Macros
-- [ ] Set up Visual Studio C# class library project for SolidWorks COM Add-in
-- [ ] Build CSV Point Cloud Importer and Exporter macros
-- [ ] Build Fix All Top-Level Components macro
+- [x] Set up Visual Studio C# class library project for SolidWorks COM Add-in
+- [x] Build CSV Point Cloud Importer and Exporter macros
+- [x] Build Fix All Top-Level Components macro
 - [ ] Build Batch Exporter (STEP, DXF, PDF)
 
 ### Phase 2: Assembly Management and Rule Book Automation
