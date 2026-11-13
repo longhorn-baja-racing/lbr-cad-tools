@@ -41,8 +41,8 @@ baja-cad-tools/
 
 ### Phase 2: Assembly Management and Rule Book Automation
 - [ ] Implement Parametric Part Numbering via CustomPropertyManager
-- [ ] Build Ergonomics Mounting Tab Generator (single/double shear + B.4/B.12 presets)
-- [ ] Add Auto-Saver and Trigger Config file support
+- [x] Build Ergonomics Mounting Tab Generator (single/double shear + B.4/B.12 presets)
+- [x] Add Auto-Saver and Trigger Config file support
 - [ ] Build Surface Copier utility
 
 ### Phase 3: Complex Geometry and Kinematics
