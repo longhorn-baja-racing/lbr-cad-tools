@@ -446,7 +446,8 @@ namespace Lbr.CadTools.SmokeTest
 
             Step("Batch Export again (replaces files)");
             r = BatchExporter.Run(app, top, options);
-            Check(r.Failed.Count == 0 && r.Written.Count >= expected.Count, $"no failures, {r.Written.Count} written");
+            Check(r.Failed.Count == 0 && r.Written.Count >= expected.Count,
+                $"no failures, {r.Written.Count} written" + (r.Failed.Count > 0 ? ": " + string.Join("; ", r.Failed) : ""));
         }
 
         // ---- Auto-Saver (issue #8) ----
@@ -505,7 +506,8 @@ namespace Lbr.CadTools.SmokeTest
 
             Step("Tab: lap belt, double shear, base contoured to a 1.5 in tube");
             TabInputs lap = TabInputs.Defaults(TabUse.LapBelt);
-            lap.ContourTubeDiameter = 1.5 * inch;
+            lap.TubeDiameter = 1.5 * inch; // also the gap between the tabs
+            lap.ContourTubeDiameter = lap.TubeDiameter;
             CheckTab(app, lap, bodies: 2);
 
             Step("Tab: seat, single shear, straight base");
@@ -525,11 +527,11 @@ namespace Lbr.CadTools.SmokeTest
 
             var box = (double[])((IPartDoc)doc).GetPartBox(true);
             double width = box[3] - box[0], height = box[4] - box[1], depth = box[5] - box[2];
-            double expectDepth = bodies == 2 ? 2 * t.Thickness + t.Gap : t.Thickness;
+            double expectDepth = bodies == 2 ? 2 * t.Thickness + t.TabGap : t.Thickness;
             Console.WriteLine($"  box {width * 1000:F2} x {height * 1000:F2} x {depth * 1000:F2} mm");
             Check(Math.Abs(width - t.BaseWidth) < 1e-6, "width is B");
             Check(Math.Abs(height - (t.Length + t.EndDiameter / 2)) < 1e-6, "height is L + D2/2");
-            Check(Math.Abs(depth - expectDepth) < 1e-6, bodies == 2 ? "depth is 2t + gap" : "depth is t");
+            Check(Math.Abs(depth - expectDepth) < 1e-6, bodies == 2 ? "depth is 2t + gap (tube OD)" : "depth is t");
 
             doc.Extension.get_CustomPropertyManager("").Get6("Description", false, out _, out string description, out _, out _);
             Check(description == TabRules.Describe(t), $"Description property set ({description})");
@@ -771,13 +773,14 @@ namespace Lbr.CadTools.SmokeTest
             return string.Join(" | ", parts);
         }
 
-        private static IEnumerable<IFeature> Features(IModelDoc2 doc)
-        {
-            for (var f = (IFeature)doc.FirstFeature(); f != null; f = (IFeature)f.GetNextFeature())
-            {
-                yield return f;
-            }
-        }
+        /// <summary>
+        /// All features from IFeatureManager.GetFeatures rather than walking
+        /// FirstFeature/GetNextFeature: out of process the walk sometimes hits
+        /// an entry (right after Design Binder) whose calls all throw
+        /// RPC_E_SERVERFAULT, so the planes after it are never reached.
+        /// </summary>
+        private static IEnumerable<IFeature> Features(IModelDoc2 doc) =>
+            ((doc.FeatureManager.GetFeatures(false) as object[]) ?? new object[0]).OfType<IFeature>();
 
         // ---- Output ----
 
