@@ -8,6 +8,26 @@
 #>
 $ErrorActionPreference = 'Stop'
 
+# Runs 64-bit RegAsm and returns its exit code. RegAsm always prints warning
+# RA0000 (unsigned assembly) on stderr; with ErrorActionPreference=Stop,
+# PowerShell 5.1 would turn that line into a terminating error, so run it
+# with Continue and judge only by the exit code.
+function Invoke-RegAsm([string[]]$arguments) {
+    $regasm = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe'
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $lines = & $regasm @arguments 2>&1 | ForEach-Object { "$_" }
+        $code = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
+    if ($code -ne 0) {
+        $lines | Where-Object { $_ -notmatch 'RA0000' } | ForEach-Object { Write-Host "  $_" }
+    }
+    return $code
+}
 function Finish([int]$code) {
     Write-Host ''
     Read-Host 'Press Enter to close' | Out-Null
@@ -40,10 +60,9 @@ try {
         Finish 0
     }
 
-    $regasm = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe'
-    & $regasm /unregister /nologo $installed | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Unregistering failed (RegAsm exit code $LASTEXITCODE)."
+    $code = Invoke-RegAsm @('/unregister', '/nologo', $installed)
+    if ($code -ne 0) {
+        throw "Unregistering failed (RegAsm exit code $code)."
     }
     Remove-Item $target -Recurse -Force
 
