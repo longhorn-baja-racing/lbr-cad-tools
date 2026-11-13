@@ -1,61 +1,71 @@
 # Longhorn Baja SolidWorks Tools
 
-Custom SolidWorks API macros and C# add-ins built to automate repetitive CAD tasks, enforce rule book standards, and streamline assembly workflows across sub-teams.
+A SolidWorks add-in for Longhorn Baja Racing that automates repetitive CAD tasks, checks Baja SAE rule book values, and streamlines assembly work across sub-teams. Everything shows up on the **LBR CAD Tools** tab in SolidWorks.
+
+## Tools
+
+### General
+| Button | What it does |
+|---|---|
+| **Fix All / Float All** | Fixes or floats every top-level component of the active assembly in one click. Subassembly files are not touched. |
+| **Restore Fix States** | Undoes the last Fix All or Float All (Ctrl+Z cannot), including a mixed starting state. |
+| **Import Points** | Reads X, Y, Z rows from a CSV file into the open sketch, or into a new 3D sketch. Header, units (mm / in / m), and extra columns are handled. |
+| **Export Points** | Writes the points of the open or selected sketch to CSV in model coordinates. |
+| **Batch Export** | Exports the active part, assembly (plus every unique component and their drawings), or drawing to STEP AP214, IGES, Parasolid, STL, PDF, DXF, and sheet metal flat pattern DXF. Files are named by part number. For large unattended folder jobs, the built-in SolidWorks Task Scheduler "Export Files" task also works. |
+| **Auto-Save** | Saves modified documents on a timer (SolidWorks Auto-recover only writes recovery copies). Skips never-saved and read-only files, and waits while a command or sketch is open. |
+| **Settings** | Hide buttons you do not use, and load or unload other add-ins at startup. See [Settings](#settings). |
+
+### Sub-team tools
+| Button | What it does |
+|---|---|
+| **Mounting Tab** (Ergonomics) | Makes a single or double shear welded tab part from the Baja SAE B.12.2 table (lap belt, anti-sub belt, seat, fire extinguisher, fuel tank): bolt size, close-fit centered hole, thickness, tube OD as the double shear spacing, optional base contoured to the tube. Checks the rules live. See `docs/rules-reference.md`. |
+
+Already built into SolidWorks, so not planned: Hide All Sketches, Merge Sketches.
+
+## Coming up
+
+| Tool | Status |
+|---|---|
+| Parametric Part Numbering | Needs the team's numbering scheme (#16) |
+| Chassis: Ordered Tube Notcher | Needs the frame modeling method (#17) |
+| Dynamics: Suspension Geometry Monitor | Camber, caster, toe, KPI, scrub, and steering radius in a Task Pane (#12) |
+| Surface Copier | Waiting to hear what Offset Surface at 0 distance is missing (#10) |
+| Manufacturing: Auto Drawing Generator | Flat pattern DXFs are in Batch Export; drawings are a stretch goal (#13) |
+
+See `docs/PLAN.md` for the API approach per feature, and the GitHub issues for details and decisions.
 
 ## Repository Structure
 
 ```text
-baja-cad-tools/
+lbr-cad-tools/
 |-- src/
-|   |-- BajaAddIn/      # Main C# COM Add-in (PropertyManager pages, Task Panes)
-|   |-- Macros/         # Standalone .swp and .cs utility scripts
-|-- docs/               # Baja SAE rule book specs (Section B.4, B.12) and guides
-|-- tests/              # Sample parts and assemblies for testing
-|-- README.md
+|   |-- BajaAddIn/        # The SolidWorks add-in (.NET Framework 4.8): commands, dialogs, SolidWorks calls
+|   |-- BajaAddIn.Core/   # SolidWorks-free logic (CSV, naming, rules, geometry, settings), unit tested
+|-- tests/                # Unit tests for BajaAddIn.Core (run in CI)
+|-- tools/SwSmokeTest/    # Drives a real SolidWorks to test the add-in's feature code (Windows only)
+|-- scripts/              # register.ps1 / unregister.ps1
+|-- docs/
+|   |-- PLAN.md             # Architecture, API approach, per-feature notes, open questions
+|   |-- rules-reference.md  # Baja SAE rule values used by the tools (B.12.2 tab table, etc.)
 ```
 
-## Planned Features
+## Requirements
 
-### General and Utilities
-- **Batch Exporter:** Export active assemblies or folders into STEP, IGES, DXF, and PDF formats automatically.
-- **CSV Point Cloud I/O:** Import coordinates from a CSV file directly into a 2D or 3D sketch, and export existing sketch points back to CSV.
-- **Parametric Part Numbering:** Automatically assign standardized part numbers and custom properties across assemblies.
-- **Auto-Saver:** Background save utility triggered on timed intervals or specific rebuild events.
-- **Fix All Top-Level Components:** One-click macro to lock/fix all floating top-level parts in an assembly.
-- **Add-in Trigger Config:** Lightweight config file to enable or disable specific sub-team tools on startup.
-- **Surface Copier:** Quick utility to offset/copy selected faces into surface bodies.
+- Windows with SolidWorks installed (built and tested on SolidWorks 2026)
+- To build: .NET SDK 8 or newer and Visual Studio 2022 (optional). The add-in targets .NET Framework 4.8, which SolidWorks requires.
+- Administrator rights to register the add-in
 
-### Sub-Team Tools
-- **Ergonomics - Mounting Tab Generator:** Generates single-shear or double-shear mounting tabs based on user inputs (tube diameter, bolt size, material thickness). Defaults to Baja SAE rule book dimensions (Sections B.4 and B.12) and places centered clearance holes.
-- **Chassis - Ordered Tube Notcher:** Automates weldment tube trimming using a customizable priority hierarchy (for example, keeping floor rails intact while trimming secondary members into them) with per-node overrides.
-- **Dynamics - Suspension Geometry Monitor:** Real-time kinematic dashboard inside the SolidWorks Task Pane that calculates and displays live camber, caster, toe, KPI, and steering radius as suspension assemblies articulate.
-- **Manufacturing - Auto Drawing Generator:** Experimental tool to generate basic orthographic views and flat-pattern DXFs for sheet metal tabs.
+## Building from source
 
-## Development Milestones
+1. Clone this repository and close SolidWorks.
+2. Build: `dotnet build` (or open `LbrCadTools.sln` in Visual Studio 2022). The SolidWorks interop DLLs are taken from your SolidWorks install; set `SwInteropDir` if SolidWorks is not in the default folder.
+3. Register from an Administrator PowerShell: `.\scripts\register.ps1` (once; rebuilds update in place).
+4. Start SolidWorks. The **LBR CAD Tools** tab appears in parts, assemblies, and drawings.
+5. To remove it: `.\scripts\unregister.ps1`.
 
-### Phase 1: Foundation and Quick Macros
-- [x] Set up Visual Studio C# class library project for SolidWorks COM Add-in
-- [x] Build CSV Point Cloud Importer and Exporter macros
-- [x] Build Fix All Top-Level Components macro
-- [x] Build Batch Exporter (STEP, DXF, PDF)
+If Windows refuses to run the scripts, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once. If the tab does not show up, read `%LOCALAPPDATA%\LBR CAD Tools\BajaAddIn.log`.
 
-### Phase 2: Assembly Management and Rule Book Automation
-- [ ] Implement Parametric Part Numbering via CustomPropertyManager
-- [x] Build Ergonomics Mounting Tab Generator (single/double shear + B.4/B.12 presets)
-- [x] Add Auto-Saver and Trigger Config file support
-- [ ] Build Surface Copier utility
-
-### Phase 3: Complex Geometry and Kinematics
-- [ ] Build Chassis Ordered Tube Notcher with priority rules
-- [ ] Build Dynamics Suspension Geometry Monitor (live kinematic solver in Task Pane)
-- [ ] Prototype Auto Drawing Generator for laser/waterjet parts
-
-## Setup and Installation
-
-1. Clone this repository to your local machine.
-2. Open the solution file in Visual Studio.
-3. Verify that the SolidWorks API references (`SolidWorks.Interop.sldworks`, `SolidWorks.Interop.swconst`) match your installed SolidWorks version.
-4. Build the solution in Release mode to register the COM add-in, or run standalone `.swp` macros via `Tools -> Macro -> Run` inside SolidWorks.
+Tests: `dotnet test LbrCadTools.CI.slnf` runs the unit tests (also in CI). With SolidWorks closed, `tools\SwSmokeTest\bin\Debug\net48\SwSmokeTest.exe` runs the SolidWorks checks.
 
 ## Settings
 
