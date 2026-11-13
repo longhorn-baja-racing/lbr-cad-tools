@@ -1,0 +1,34 @@
+name: Bug report
+description: Something in the add-in or a macro does not work.
+labels: ["bug"]
+body:
+  - type: input
+    id: tool
+    attributes:
+      label: Tool or command
+      placeholder: e.g. Batch Exporter
+    validations:
+      required: true
+  - type: input
+    id: sw-version
+    attributes:
+      label: SolidWorks version and service pack
+      placeholder: e.g. 2025 SP3
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual result
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Sample files and screenshots

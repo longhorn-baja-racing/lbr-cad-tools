@@ -1,0 +1,50 @@
+name: Tool request
+description: Request a new automation tool or a change to an existing one.
+labels: ["feature"]
+body:
+  - type: dropdown
+    id: subteam
+    attributes:
+      label: Sub-team
+      options:
+        - General
+        - Chassis
+        - Dynamics
+        - Ergonomics
+        - Manufacturing
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want automated?
+      description: Describe the task and why it is slow or error prone today.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Exact manual steps today
+      description: List the clicks and inputs you do by hand, in order.
+      placeholder: |
+        1. Open the frame assembly
+        2. Select the tube
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: inputs
+    attributes:
+      label: Inputs and expected result
+      description: What should the user enter, and what should the tool produce?
+  - type: input
+    id: rules
+    attributes:
+      label: Related rule book sections
+      placeholder: e.g. B.12.2
+  - type: textarea
+    id: files
+    attributes:
+      label: Sample files
+      description: Attach or link a sample part or assembly (zip it if needed).
