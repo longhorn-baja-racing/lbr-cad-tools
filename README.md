@@ -1,4 +1,6 @@
-# Longhorn Baja SolidWorks Tools
+<p align="center"><img src="docs/assets/banner.svg" alt="LBR CAD Tools - SolidWorks add-in for Longhorn Baja Racing, The University of Texas at Austin" width="880"></p>
+
+# LBR CAD Tools
 
 A SolidWorks add-in for Longhorn Baja Racing that automates repetitive CAD tasks, checks Baja SAE rule book values, and streamlines assembly work across sub-teams. Everything shows up on the **LBR CAD Tools** tab in SolidWorks.
 
@@ -113,3 +115,7 @@ The add-in keeps its settings in `%LOCALAPPDATA%\LBR CAD Tools\settings.json`. O
 ## Contributing and Requests
 
 Sub-team leads and members can request new automation tools or report bugs by opening an Issue in this repository. Include a sample part or assembly file and list the exact manual steps you want automated.
+
+---
+
+<p align="center"><img src="docs/assets/monstera.svg" alt="Monstera leaf" width="28"><br><sub>Built by Cyrus for Longhorn Baja Racing, The University of Texas at Austin.</sub></p>

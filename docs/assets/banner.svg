@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 160" width="880" height="160">
+  <!-- README banner. Burnt orange #BF5700; the leaf is the developer mark (docs/assets/monstera.svg). -->
+  <defs>
+    <mask id="cuts" maskUnits="userSpaceOnUse" x="-5" y="-5" width="110" height="110">
+      <rect x="-5" y="-5" width="110" height="110" fill="white"/>
+      <g fill="black">
+        <polygon points="55,27 80,5 85,9"/>
+        <polygon points="45,27 20,5 15,9"/>
+        <polygon points="56,47 99,24 100,30"/>
+        <polygon points="44,47 1,24 0,30"/>
+        <polygon points="57,66 100,50 99,56"/>
+        <polygon points="43,66 0,50 1,56"/>
+      </g>
+    </mask>
+  </defs>
+  <rect width="880" height="160" rx="14" fill="#BF5700"/>
+  <g font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" fill="#FFFFFF">
+    <text x="40" y="74" font-size="44" font-weight="600">LBR CAD Tools</text>
+    <text x="42" y="108" font-size="19" opacity="0.92">SolidWorks add-in for Longhorn Baja Racing</text>
+    <text x="42" y="134" font-size="15" opacity="0.8">The University of Texas at Austin</text>
+  </g>
+  <g transform="translate(736 22) scale(1.16)" opacity="0.28">
+    <path fill="#FFFFFF" mask="url(#cuts)" d="M50 2 C62 10 92 18 92 46 C92 72 75 91 58 86 C53 85 51 79 50 72 C49 79 47 85 42 86 C25 91 8 72 8 46 C8 18 38 10 50 2 Z"/>
+    <line x1="50" y1="72" x2="50" y2="97" stroke="#FFFFFF" stroke-width="4.2" stroke-linecap="round"/>
+  </g>
+</svg>
