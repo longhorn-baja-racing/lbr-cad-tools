@@ -73,10 +73,12 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      # The add-in itself needs the SolidWorks interop assemblies from a local
+      # install, so CI builds and tests only the SolidWorks-free projects.
       - name: Build
         if: steps.detect.outputs.found == 'true'
-        run: dotnet build -c Release
+        run: dotnet build LbrCadTools.CI.slnf -c Release
 
       - name: Test
         if: steps.detect.outputs.found == 'true'
-        run: dotnet test -c Release --no-build
+        run: dotnet test LbrCadTools.CI.slnf -c Release --no-build
