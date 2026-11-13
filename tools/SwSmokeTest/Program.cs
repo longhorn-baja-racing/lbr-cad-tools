@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using Lbr.CadTools.AddIn.Features.AutoSave;
 using Lbr.CadTools.AddIn.Features.BatchExport;
 using Lbr.CadTools.AddIn.Features.FixComponents;
 using Lbr.CadTools.AddIn.Features.SketchPoints;
@@ -120,6 +121,8 @@ namespace Lbr.CadTools.SmokeTest
                     SketchPointsTest(app, dir, keep);
                     app.CloseAllDocuments(true);
                     BatchExportTest(app, dir);
+                    app.CloseAllDocuments(true);
+                    AutoSaveTest(app, dir);
                 }
                 finally
                 {
@@ -439,6 +442,64 @@ namespace Lbr.CadTools.SmokeTest
             Step("Batch Export again (replaces files)");
             r = BatchExporter.Run(app, top, options);
             Check(r.Failed.Count == 0 && r.Written.Count >= expected.Count, $"no failures, {r.Written.Count} written");
+        }
+
+        // ---- Auto-Saver (issue #8) ----
+
+        private static void AutoSaveTest(ISldWorks app, string dir)
+        {
+            Step("Auto-save: idle detection");
+            app.GetRunningCommandInfo(out int commandId, out string title, out bool uiActive);
+            Console.WriteLine($"  GetRunningCommandInfo idle: id {commandId}, title '{title}', uiActive {uiActive}");
+            Check(!AutoSaver.IsBusy(app, out string busy), $"not busy when idle (got busy with {busy})");
+
+            Step("Auto-save: saves modified saved documents only");
+            string sub = Path.Combine(dir, "autosave");
+            Directory.CreateDirectory(sub);
+            string savedPath = CreateBoxPart(app, sub, "AutoA", 0.020);
+            var saved = (IModelDoc2)app.GetOpenDocumentByName(savedPath);
+            Console.WriteLine($"  Visible: saved part {saved.Visible}");
+            DateTime before = File.GetLastWriteTimeUtc(savedPath);
+            AddSketchLine(saved);
+            Check(saved.GetSaveFlag(), "saved part is modified");
+
+            IModelDoc2 fresh = NewPart(app);
+            AddSketchLine(fresh);
+            Console.WriteLine($"  Visible: new part {fresh.Visible}; modified {fresh.GetSaveFlag()}");
+
+            System.Threading.Thread.Sleep(1100); // file times have coarse resolution
+            AutoSaver.Result r = AutoSaver.SaveNow(app);
+            Console.WriteLine("  status: " + AutoSavePolicy.Status(DateTime.Now, r.Saved, r.Failed, r.NeverSaved));
+            Check(r.Saved == 1 && r.Failed.Count == 0, $"1 saved, 0 failed (got {r.Saved}, {r.Failed.Count})");
+            Check(r.NeverSaved == 1, $"1 never-saved document reported (got {r.NeverSaved})");
+            Check(!saved.GetSaveFlag() && File.GetLastWriteTimeUtc(savedPath) > before, "saved part written to disk");
+
+            r = AutoSaver.SaveNow(app);
+            Check(r.Saved == 0, $"second run saves nothing (got {r.Saved})");
+
+            Step("Auto-save: busy detection");
+            int err = 0;
+            app.ActivateDoc3(savedPath, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref err);
+            IFeature plane = Features(saved).First(f => f.GetTypeName2() == "RefPlane");
+            plane.Select2(false, 0);
+            saved.SketchManager.InsertSketch(true);
+            Check(AutoSaver.IsBusy(app, out busy), $"busy while editing a sketch ({busy})");
+            saved.SketchManager.InsertSketch(true);
+            saved.ClearSelection2(true);
+            bool ran = app.RunCommand(9 /* swCommands_Fillet */, "");
+            Check(ran && AutoSaver.IsBusy(app, out busy), $"busy while the Fillet PropertyManager is open ({busy})");
+            app.RunCommand(-1 /* swCommands_PmCancel */, "");
+            Check(!AutoSaver.IsBusy(app, out busy), $"idle again after cancel (got {busy})");
+        }
+
+        private static void AddSketchLine(IModelDoc2 doc)
+        {
+            IFeature plane = Features(doc).First(f => f.GetTypeName2() == "RefPlane");
+            plane.Select2(false, 0);
+            doc.SketchManager.InsertSketch(true);
+            doc.SketchManager.CreateLine(0, 0, 0, 0.01, 0.01, 0);
+            doc.SketchManager.InsertSketch(true);
+            doc.ClearSelection2(true);
         }
 
         private static string CreateSheetMetalPart(ISldWorks app, string dir, string name)
