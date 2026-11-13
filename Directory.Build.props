@@ -1,0 +1,13 @@
+<Project>
+  <!-- Shared settings for every project in the repo. -->
+  <PropertyGroup>
+    <LangVersion>10.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Company>Longhorn Baja Racing</Company>
+    <Product>LBR CAD Tools</Product>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+</Project>

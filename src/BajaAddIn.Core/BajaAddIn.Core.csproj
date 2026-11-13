@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    SolidWorks-free logic: unit conversion, rule checks, geometry math.
+    netstandard2.0 so the net48 add-in can use it and the net8.0 tests can
+    run on any OS. Never reference SolidWorks interop assemblies here.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>Lbr.CadTools.Core</RootNamespace>
+  </PropertyGroup>
+</Project>
