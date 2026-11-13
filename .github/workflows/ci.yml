@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ascii:
+    name: ASCII check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: File contents are clean ASCII
+        run: |
+          bad="$(git ls-files -z | xargs -0 -r env LC_ALL=C grep -InP '[^\x09\x0A\x0D\x20-\x7E]' || true)"
+          if [ -n "$bad" ]; then
+            printf '%s\n' "$bad"
+            echo "::error::Non-ASCII characters found (em/en dashes, smart quotes, ellipsis, emoji, etc.). Use plain ASCII."
+            exit 1
+          fi
+
+      - name: File names are clean ASCII
+        run: |
+          bad="$(git -c core.quotePath=false ls-files | LC_ALL=C grep -nP '[^\x20-\x7E]' || true)"
+          if [ -n "$bad" ]; then
+            printf '%s\n' "$bad"
+            echo "::error::Non-ASCII file names found."
+            exit 1
+          fi
+
+      - name: Commit messages are clean ASCII
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          bad="$(git log --format='%h %s%n%b' "$BASE_SHA..$HEAD_SHA" | LC_ALL=C grep -nP '[^\x09\x0A\x0D\x20-\x7E]' || true)"
+          if [ -n "$bad" ]; then
+            printf '%s\n' "$bad"
+            echo "::error::Non-ASCII characters in commit messages."
+            exit 1
+          fi
+
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Detect .NET projects
+        id: detect
+        run: |
+          if git ls-files '*.sln' '*.slnx' '*.csproj' | grep -q .; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "No .NET projects yet. Skipping build."
+          fi
+
+      - uses: actions/setup-dotnet@v6
+        if: steps.detect.outputs.found == 'true'
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build
+        if: steps.detect.outputs.found == 'true'
+        run: dotnet build -c Release
+
+      - name: Test
+        if: steps.detect.outputs.found == 'true'
+        run: dotnet test -c Release --no-build
