@@ -68,6 +68,7 @@ namespace Lbr.CadTools.AddIn
             new AutoSaveCommand(() => autoSaver),
             new SettingsCommand(this),
             new AboutCommand(),
+            new GuideCommand(AllCommands),
         };
 
         /// <summary>All commands minus those hidden in settings.json. Settings can never be hidden.</summary>

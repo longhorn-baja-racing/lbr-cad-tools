@@ -6,22 +6,38 @@ A SolidWorks add-in for Longhorn Baja Racing that automates repetitive CAD tasks
 
 ## Tools
 
-### General
+The tab is split into sections, each with its own icon color. **Tool Guide** (in Help and Setup) explains every button in SolidWorks itself, and hovering over a button shows a one-line description.
+
+### Vehicle Design
+| Button | What it does |
+|---|---|
+| **Mounting Tab** (Ergonomics) | Makes a single or double shear welded tab part from the Baja SAE B.12.2 table (lap belt, anti-sub belt, seat, fire extinguisher, fuel tank): bolt size, close-fit centered hole, thickness, tube OD as the double shear spacing, optional base contoured to the tube. Checks the rules live. See `docs/rules-reference.md`. |
+| **Suspension Check** (Dynamics) | Reads reference points named `HP_<point>_<corner>` (for example `HP_UBJ_FL`: UBJ, LBJ, WC = wheel center, SA = a point on the spin axis inboard of WC) and reports camber, toe, caster, KPI, scrub radius, and trail per corner, plus Ackermann % and turning radius when the fronts are steered (needs `HP_WC_RL` or `HP_WC_RR` for the rear axle). Move or steer the assembly and run it again. |
+
+### Sketch Points
+| Button | What it does |
+|---|---|
+| **Import Points** | Reads X, Y, Z rows from a CSV file into the open sketch, or into a new 3D sketch. Header, units (mm / in / m), and extra columns are handled. |
+| **Export Points** | Writes the points of the open or selected sketch to CSV in model coordinates. |
+
+### Assembly
 | Button | What it does |
 |---|---|
 | **Fix All / Float All** | Fixes or floats every top-level component of the active assembly in one click. Subassembly files are not touched. |
 | **Restore Fix States** | Undoes the last Fix All or Float All (Ctrl+Z cannot), including a mixed starting state. |
-| **Import Points** | Reads X, Y, Z rows from a CSV file into the open sketch, or into a new 3D sketch. Header, units (mm / in / m), and extra columns are handled. |
-| **Export Points** | Writes the points of the open or selected sketch to CSV in model coordinates. |
-| **Batch Export** | Exports the active part, assembly (plus every unique component and their drawings), or drawing to STEP AP214, IGES, Parasolid, STL, PDF, DXF, and sheet metal flat pattern DXF. Files are named by part number. For large unattended folder jobs, the built-in SolidWorks Task Scheduler "Export Files" task also works. |
-| **Auto-Save** | Saves modified documents on a timer (SolidWorks Auto-recover only writes recovery copies). Skips never-saved and read-only files, and waits while a command or sketch is open. |
-| **Settings** | Hide buttons you do not use, and load or unload other add-ins at startup. See [Settings](#settings). |
 
-### Sub-team tools
+### Files
 | Button | What it does |
 |---|---|
-| **Suspension Check** (Dynamics) | Reads reference points named `HP_<point>_<corner>` (for example `HP_UBJ_FL`: UBJ, LBJ, WC = wheel center, SA = a point on the spin axis inboard of WC) and reports camber, toe, caster, KPI, scrub radius, and trail per corner, plus Ackermann % and turning radius when the fronts are steered (needs `HP_WC_RL` or `HP_WC_RR` for the rear axle). Move or steer the assembly and run it again. |
-| **Mounting Tab** (Ergonomics) | Makes a single or double shear welded tab part from the Baja SAE B.12.2 table (lap belt, anti-sub belt, seat, fire extinguisher, fuel tank): bolt size, close-fit centered hole, thickness, tube OD as the double shear spacing, optional base contoured to the tube. Checks the rules live. See `docs/rules-reference.md`. |
+| **Batch Export** | Exports the active part, assembly (plus every unique component and their drawings), or drawing to STEP AP214, IGES, Parasolid, STL, PDF, DXF, and sheet metal flat pattern DXF. Files are named by part number. For large unattended folder jobs, the built-in SolidWorks Task Scheduler "Export Files" task also works. |
+| **Auto-Save** | Saves modified documents on a timer (SolidWorks Auto-recover only writes recovery copies). Skips never-saved and read-only files, and waits while a command or sketch is open. |
+
+### Help and Setup
+| Button | What it does |
+|---|---|
+| **Tool Guide** | Every button, section by section: what it does, how to use it, and which documents it works in. |
+| **Settings** | Hide buttons you do not use, and load or unload other add-ins at startup. See [Settings](#settings). |
+| **About** | Version, credits, the GitHub link, and the log folder to attach to a bug report. |
 
 Already built into SolidWorks, so not planned: Hide All Sketches, Merge Sketches.
 
