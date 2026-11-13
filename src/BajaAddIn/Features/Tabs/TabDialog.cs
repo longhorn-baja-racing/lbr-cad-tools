@@ -22,6 +22,7 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
         private readonly RadioButton single = new RadioButton();
         private readonly RadioButton dbl = new RadioButton();
         private readonly CheckBox contour = new CheckBox();
+        private readonly CheckBox gapFromTube = new CheckBox();
         private readonly Dictionary<string, TextBox> fields = new Dictionary<string, TextBox>();
         private readonly Label checks = new Label();
         private readonly Button generate = new Button();
@@ -36,8 +37,8 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             ("BaseWidth", "Base width B"),
             ("Length", "Length L (base to hole center)"),
             ("Thickness", "Thickness t"),
-            ("Gap", "Gap between tabs (double shear)"),
-            ("Tube", "Tube OD (contoured base)"),
+            ("Tube", "Tube OD"),
+            ("Gap", "Gap between tabs"),
         };
 
         public TabDialog()
@@ -81,17 +82,25 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
 
             foreach ((string key, string label) in Sizes)
             {
-                if (key == "Tube")
+                if (key == "Gap")
                 {
-                    contour.Text = "Contour the base to a tube";
-                    contour.AutoSize = true;
-                    grid.Controls.Add(contour, 0, row);
-                    grid.SetColumnSpan(contour, 2);
+                    gapFromTube.Text = "Double shear: gap = tube OD (tabs on either side of the tube)";
+                    gapFromTube.AutoSize = true;
+                    grid.Controls.Add(gapFromTube, 0, row);
+                    grid.SetColumnSpan(gapFromTube, 2);
                     row++;
                 }
                 var box = new TextBox();
                 fields[key] = box;
                 Add(label, box);
+                if (key == "Gap")
+                {
+                    contour.Text = "Contour the base to the tube OD";
+                    contour.AutoSize = true;
+                    grid.Controls.Add(contour, 0, row);
+                    grid.SetColumnSpan(contour, 2);
+                    row++;
+                }
             }
 
             var reset = new Button { Text = "Use rule sizes", AutoSize = true };
@@ -110,7 +119,7 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
                 AutoSize = true,
                 MaximumSize = new Size(440, 0),
                 ForeColor = SystemColors.GrayText,
-                Text = "Creates a new part (not saved). Double shear makes two bodies spaced by the gap. " +
+                Text = "Creates a new part (not saved) with the hole centered in the rounded end. Double shear makes two bodies spaced by the gap. " +
                        "Weld along the whole base line; no cutouts or lightening holes (B.12.2.2).",
             };
             grid.Controls.Add(note, 0, row);
@@ -151,6 +160,7 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             };
             single.CheckedChanged += (s, e) => UpdateChecks();
             contour.CheckedChanged += (s, e) => UpdateChecks();
+            gapFromTube.CheckedChanged += (s, e) => UpdateChecks();
             foreach (TextBox box in fields.Values)
             {
                 box.TextChanged += (s, e) => UpdateChecks();
@@ -172,6 +182,7 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             single.Checked = !t.DoubleShear;
             dbl.Checked = t.DoubleShear;
             contour.Checked = t.ContourTubeDiameter > 0;
+            gapFromTube.Checked = t.GapFromTube;
             Set("Bolt", t.Bolt);
             Set("Hole", t.Hole);
             Set("EndDiameter", t.EndDiameter);
@@ -179,7 +190,7 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             Set("Length", t.Length);
             Set("Thickness", t.Thickness);
             Set("Gap", t.Gap);
-            Set("Tube", t.ContourTubeDiameter > 0 ? t.ContourTubeDiameter : 1.25 * Units.MetersPerInch);
+            Set("Tube", t.TubeDiameter);
             loading = false;
             UpdateChecks();
         }
@@ -209,8 +220,10 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             t.BaseWidth = Get("BaseWidth");
             t.Length = Get("Length");
             t.Thickness = Get("Thickness");
-            t.Gap = dbl.Checked ? Get("Gap") : 0;
-            t.ContourTubeDiameter = contour.Checked ? Get("Tube") : 0;
+            t.TubeDiameter = Get("Tube");
+            t.GapFromTube = gapFromTube.Checked;
+            t.Gap = Get("Gap");
+            t.ContourTubeDiameter = contour.Checked ? t.TubeDiameter : 0;
             return ok;
         }
 
@@ -220,8 +233,8 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             {
                 return;
             }
-            fields["Gap"].Enabled = dbl.Checked;
-            fields["Tube"].Enabled = contour.Checked;
+            gapFromTube.Enabled = dbl.Checked;
+            fields["Gap"].Enabled = dbl.Checked && !gapFromTube.Checked;
 
             if (!TryRead(out TabInputs t))
             {

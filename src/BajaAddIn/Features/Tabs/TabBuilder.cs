@@ -10,7 +10,7 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
     /// Builds a B.12.2 attachment tab as a new, unsaved part: the Figure B-54
     /// outline sketched on the Front plane and extruded to thickness t. A
     /// double shear pair is two bodies, the second starting t + gap from the
-    /// plane. Kept apart from the command so the smoke test can drive it.
+    /// plane (the gap is the tube OD by default). Kept apart from the command so the smoke test can drive it.
     /// </summary>
     internal static class TabBuilder
     {
@@ -23,7 +23,7 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             Extrude(doc, t, startOffset: 0, merge: true);
             if (t.DoubleShear)
             {
-                Extrude(doc, t, startOffset: t.Thickness + t.Gap, merge: false);
+                Extrude(doc, t, startOffset: t.Thickness + t.TabGap, merge: false);
             }
 
             ICustomPropertyManager props = doc.Extension.get_CustomPropertyManager("");
@@ -94,7 +94,9 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
 
         private static IFeature FirstPlane(IModelDoc2 doc)
         {
-            for (var f = (IFeature)doc.FirstFeature(); f != null; f = (IFeature)f.GetNextFeature())
+            // GetFeatures, not a FirstFeature/GetNextFeature walk: the walk can stop at an
+            // entry whose calls all fault (seen out of process), before reaching the planes.
+            foreach (IFeature f in ((doc.FeatureManager.GetFeatures(false) as object[]) ?? new object[0]).OfType<IFeature>())
             {
                 string type;
                 try

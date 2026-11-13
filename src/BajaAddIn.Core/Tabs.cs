@@ -90,8 +90,20 @@ namespace Lbr.CadTools.Core
 
         public bool DoubleShear { get; set; }
 
-        /// <summary>Clear gap between the two tabs of a double shear pair.</summary>
+        /// <summary>Outside diameter of the tube the tab is welded to.</summary>
+        public double TubeDiameter { get; set; }
+
+        /// <summary>
+        /// Double shear: space the tabs by the tube OD, so they sit on either
+        /// side of the tube. When false, <see cref="Gap"/> is used.
+        /// </summary>
+        public bool GapFromTube { get; set; }
+
+        /// <summary>Clear gap between the two tabs when <see cref="GapFromTube"/> is off.</summary>
         public double Gap { get; set; }
+
+        /// <summary>The clear gap actually used between double shear tabs.</summary>
+        public double TabGap => GapFromTube ? TubeDiameter : Gap;
 
         /// <summary>When above 0, the base is cut to fit a tube of this outside diameter.</summary>
         public double ContourTubeDiameter { get; set; }
@@ -118,6 +130,8 @@ namespace Lbr.CadTools.Core
                 Length = maxLength / 2,
                 Thickness = p.MinThickness > 0 ? p.MinThickness : 0.125 * Units.MetersPerInch,
                 DoubleShear = p.DoubleShear,
+                TubeDiameter = 1.0 * Units.MetersPerInch,
+                GapFromTube = true,
                 Gap = 0.5 * Units.MetersPerInch,
             };
         }
@@ -163,9 +177,11 @@ namespace Lbr.CadTools.Core
                 Error("All sizes must be greater than zero.");
                 return issues;
             }
-            if (t.DoubleShear && t.Gap <= 0)
+            if (t.DoubleShear && t.TabGap <= 0)
             {
-                Error("The gap between double shear tabs must be greater than zero.");
+                Error(t.GapFromTube
+                    ? "Enter the tube OD; it sets the gap between the double shear tabs."
+                    : "The gap between double shear tabs must be greater than zero.");
             }
             if (t.Hole >= t.EndDiameter)
             {

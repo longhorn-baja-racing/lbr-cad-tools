@@ -195,5 +195,32 @@ namespace Lbr.CadTools.Core.Tests
             Assert.Equal("Lap belt tab, double shear, 0.438 in bolt, 0.09 in thick",
                 TabRules.Describe(TabInputs.Defaults(TabUse.LapBelt)));
         }
+
+        [Fact]
+        public void Double_shear_gap_is_the_tube_OD_by_default()
+        {
+            TabInputs t = TabInputs.Defaults(TabUse.LapBelt);
+            Assert.True(t.GapFromTube);
+            Assert.Equal(1.0 * In, t.TubeDiameter, 12);
+            Assert.Equal(t.TubeDiameter, t.TabGap, 12);
+
+            t.TubeDiameter = 1.25 * In;
+            Assert.Equal(1.25 * In, t.TabGap, 12);
+
+            t.GapFromTube = false;
+            t.Gap = 0.3 * In;
+            Assert.Equal(0.3 * In, t.TabGap, 12);
+        }
+
+        [Fact]
+        public void Double_shear_needs_a_tube_OD_when_it_sets_the_gap()
+        {
+            TabInputs t = TabInputs.Defaults(TabUse.LapBelt);
+            t.TubeDiameter = 0;
+            Assert.Contains(TabRules.Check(t), i => i.Level == TabIssueLevel.Error && i.Message.Contains("tube OD"));
+
+            t.DoubleShear = false;
+            Assert.DoesNotContain(TabRules.Check(t), i => i.Level == TabIssueLevel.Error);
+        }
     }
 }
