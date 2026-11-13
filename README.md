@@ -18,6 +18,7 @@ A SolidWorks add-in for Longhorn Baja Racing that automates repetitive CAD tasks
 ### Sub-team tools
 | Button | What it does |
 |---|---|
+| **Suspension Check** (Dynamics) | Reads reference points named `HP_<point>_<corner>` (for example `HP_UBJ_FL`: UBJ, LBJ, WC = wheel center, SA = a point on the spin axis inboard of WC) and reports camber, toe, caster, KPI, scrub radius, and trail per corner, plus Ackermann % and turning radius when the fronts are steered (needs `HP_WC_RL` or `HP_WC_RR` for the rear axle). Move or steer the assembly and run it again. |
 | **Mounting Tab** (Ergonomics) | Makes a single or double shear welded tab part from the Baja SAE B.12.2 table (lap belt, anti-sub belt, seat, fire extinguisher, fuel tank): bolt size, close-fit centered hole, thickness, tube OD as the double shear spacing, optional base contoured to the tube. Checks the rules live. See `docs/rules-reference.md`. |
 
 Already built into SolidWorks, so not planned: Hide All Sketches, Merge Sketches.
@@ -28,7 +29,7 @@ Already built into SolidWorks, so not planned: Hide All Sketches, Merge Sketches
 |---|---|
 | Parametric Part Numbering | Needs the team's numbering scheme (#16) |
 | Chassis: Ordered Tube Notcher | Needs the frame modeling method (#17) |
-| Dynamics: Suspension Geometry Monitor | Camber, caster, toe, KPI, scrub, and steering radius in a Task Pane (#12) |
+| Dynamics: live Suspension Monitor | Suspension Check in a Task Pane that updates while you drag (#12); point names to be agreed with Dynamics |
 | Surface Copier | Waiting to hear what Offset Surface at 0 distance is missing (#10) |
 | Manufacturing: Auto Drawing Generator | Flat pattern DXFs are in Batch Export; drawings are a stretch goal (#13) |
 
@@ -77,6 +78,11 @@ The add-in keeps its settings in `%LOCALAPPDATA%\LBR CAD Tools\settings.json`. O
     "enabled": true,
     "intervalMinutes": 10
   },
+  "suspension": {
+    "forwardAxis": "+Z",
+    "upAxis": "+Y",
+    "tireRadiusInches": 11.5
+  },
   "commands": {
     "hidden": ["Import Points", "Export Points"]
   },
@@ -90,6 +96,7 @@ The add-in keeps its settings in `%LOCALAPPDATA%\LBR CAD Tools\settings.json`. O
 - `commands.hidden`: buttons to leave off the tab. Takes effect at the next SolidWorks start. Settings cannot be hidden.
 - `addIns.load` / `addIns.unload`: other add-ins to load or unload when SolidWorks starts, by title (as in Tools -> Add-Ins) or by DLL path (write `\\` for each `\`).
 - `autoSave`: also set by the **Auto-Save** button.
+- `suspension`: which model axes point forward and up (default: the car's nose shows in the Front view, Y up), and the loaded tire radius used for the contact patch.
 
 ## Contributing and Requests
 

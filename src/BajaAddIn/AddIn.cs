@@ -62,6 +62,7 @@ namespace Lbr.CadTools.AddIn
             new ExportPointsCommand(),
             new BatchExportCommand(),
             new TabCommand(),
+            new SuspensionCheckCommand(),
             new AutoSaveCommand(() => autoSaver),
             new SettingsCommand(this),
             new AboutCommand(),
