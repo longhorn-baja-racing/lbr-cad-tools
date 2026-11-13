@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Lbr.CadTools.AddIn.Features.FixComponents;
+using Lbr.CadTools.AddIn.Features.SketchPoints;
 using Lbr.CadTools.Core;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
@@ -114,6 +115,8 @@ namespace Lbr.CadTools.SmokeTest
                 try
                 {
                     FixComponentsTest(app, dir, keep);
+                    app.CloseAllDocuments(true);
+                    SketchPointsTest(app, dir, keep);
                 }
                 finally
                 {
@@ -250,17 +253,108 @@ namespace Lbr.CadTools.SmokeTest
 
         }
 
+        // ---- CSV point import / export (issue #4) ----
+
+        private static void SketchPointsTest(ISldWorks app, string dir, bool keep)
+        {
+            const double tol = 1e-9;
+            IModelDoc2 part = NewPart(app);
+
+            Step("Import into a new 3D sketch (through a CSV file)");
+            var cloud = new List<Point3>
+            {
+                new Point3(0.010, 0.020, 0.030),
+                new Point3(-0.005, 0, 0.100),
+                new Point3(0.0254, -0.0127, 0),
+            };
+            string csvPath = Path.Combine(dir, "points.csv");
+            File.WriteAllText(csvPath, PointCsv.Write(cloud, LengthUnit.Millimeter));
+            string csvText = File.ReadAllText(csvPath);
+            Check(PointCsv.DetectUnit(csvText) == LengthUnit.Millimeter, "unit detected from written header");
+            PointCsvReadResult csv = PointCsv.Read(csvText, LengthUnit.Millimeter);
+            Check(csv.Errors.Count == 0 && csv.Points.Count == 3, $"CSV read back: 3 points, 0 errors (got {csv.Points.Count}, {csv.Errors.Count})");
+
+            SketchPointIo.ImportResult r = SketchPointIo.Import(app, part, csv.Points);
+            Console.WriteLine($"  sketch {r.SketchName}, new {r.NewSketch}, added {r.Added}, off-plane {r.OffPlane}");
+            Check(r.NewSketch && r.Added == 3 && r.OffPlane == 0, "new sketch, 3 added, 0 off-plane");
+            Check(part.SketchManager.ActiveSketch == null, "new 3D sketch closed again");
+
+            var sketch3d = (ISketch)((IFeature)part.FeatureByPositionReverse(0)).GetSpecificFeature2();
+            List<Point3> exported = SketchPointIo.Export(app, sketch3d);
+            Check(SamePoints(exported, cloud, tol), $"3D export matches import (got {Show(exported)})");
+
+            Step("Export finds a sketch selected in the tree");
+            ((IFeature)sketch3d).Select2(false, 0);
+            ISketch found = SketchPointIo.FindSketch(part);
+            Check(found != null && ((IFeature)found).Name == r.SketchName, "selected sketch found");
+            part.ClearSelection2(true);
+            Check(SketchPointIo.FindSketch(part) == null, "nothing found with no selection and no open sketch");
+
+            Step("Import into an open 2D sketch on the Top plane");
+            // Template order is Front, Top, Right; found by type so language does not matter.
+            IFeature top = Features(part).Where(f => f.GetTypeName2() == "RefPlane").ElementAt(1);
+            top.Select2(false, 0);
+            part.SketchManager.InsertSketch(true);
+            ISketch sketch2d = part.SketchManager.ActiveSketch;
+            Check(sketch2d != null && !sketch2d.Is3D(), "2D sketch open");
+
+            var onPlane = new List<Point3>
+            {
+                new Point3(0.010, 0, 0.020),
+                new Point3(0.030, 0, -0.010),
+                new Point3(0.015, 0.005, 0.000), // 5 mm above the Top plane
+            };
+            r = SketchPointIo.Import(app, part, onPlane);
+            Console.WriteLine($"  sketch {r.SketchName}, new {r.NewSketch}, added {r.Added}, off-plane {r.OffPlane}");
+            Check(!r.NewSketch && r.Added == 3 && r.OffPlane == 1, "existing sketch, 3 added, 1 off-plane");
+
+            // Sketch space on Top is (X, -Z). Model (10, 0, 20) mm must be stored
+            // as |y| = 20 mm; a model-space store would give y = 0.
+            List<ISketchPoint> raw = (sketch2d.GetSketchPoints2() as object[] ?? new object[0]).Cast<ISketchPoint>().ToList();
+            Console.WriteLine("  raw sketch points: " + string.Join(" ", raw.Select(p => $"({p.X:0.####}, {p.Y:0.####}, {p.Z:0.####})")));
+            Check(raw.Any(p => Math.Abs(p.X - 0.010) < tol && Math.Abs(Math.Abs(p.Y) - 0.020) < tol),
+                "points stored in sketch space");
+
+            exported = SketchPointIo.Export(app, sketch2d);
+            var expected = new List<Point3> { onPlane[0], onPlane[1], new Point3(0.015, 0, 0) };
+            Check(SamePoints(exported, expected, tol), $"2D export in model space, off-plane point projected (got {Show(exported)})");
+
+            part.SketchManager.CreateLine(0, 0, 0, 0.05, 0.05, 0);
+            int withLine = SketchPointIo.Export(app, sketch2d).Count;
+            Check(withLine == 5, $"line end points are exported too: 5 points (got {withLine})");
+            part.SketchManager.InsertSketch(true);
+
+            if (keep)
+            {
+                Save(part, Path.Combine(dir, "Points.SLDPRT"));
+                Console.WriteLine($"  Sample CSV for manual import: {csvPath}");
+            }
+        }
+
+        private static bool SamePoints(List<Point3> actual, List<Point3> expected, double tol) =>
+            actual.Count == expected.Count
+            && expected.All(e => actual.Any(a =>
+                Math.Abs(a.X - e.X) < tol && Math.Abs(a.Y - e.Y) < tol && Math.Abs(a.Z - e.Z) < tol));
+
+        private static string Show(IEnumerable<Point3> points) =>
+            string.Join(" ", points.Select(p => $"({p.X * 1000:0.###}, {p.Y * 1000:0.###}, {p.Z * 1000:0.###}) mm"));
+
         private static bool[] SubStates(IModelDoc2 sub) => TopLevel(sub).Select(c => c.IsFixed()).ToArray();
 
         private static string Show(bool[] states) => "[" + string.Join(", ", states) + "]";
 
         // ---- Model building helpers ----
 
-        private static string CreateBoxPart(ISldWorks app, string dir, string name, double width)
+        private static IModelDoc2 NewPart(ISldWorks app)
         {
             string template = app.GetUserPreferenceStringValue((int)swUserPreferenceStringValue_e.swDefaultTemplatePart);
-            var doc = (IModelDoc2)app.NewDocument(template, 0, 0, 0)
+            return (IModelDoc2)app.NewDocument(template, 0, 0, 0)
                 ?? throw new InvalidOperationException($"NewDocument failed for part template '{template}'");
+        }
+
+        private static string CreateBoxPart(ISldWorks app, string dir, string name, double width)
+        {
+            IModelDoc2 doc = NewPart(app);
 
             // First reference plane, found by type so template language does not matter.
             IFeature plane = Features(doc).FirstOrDefault(f => f.GetTypeName2() == "RefPlane")
