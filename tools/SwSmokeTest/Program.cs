@@ -9,6 +9,7 @@ using Lbr.CadTools.AddIn.Features.AutoSave;
 using Lbr.CadTools.AddIn.Features.BatchExport;
 using Lbr.CadTools.AddIn.Features.FixComponents;
 using Lbr.CadTools.AddIn.Features.SketchPoints;
+using Lbr.CadTools.AddIn.Features.Tabs;
 using Lbr.CadTools.Core;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
@@ -118,13 +119,15 @@ namespace Lbr.CadTools.SmokeTest
                 try
                 {
                     FixComponentsTest(app, dir, keep);
-                    app.CloseAllDocuments(true);
+                    CloseAll(app);
                     SketchPointsTest(app, dir, keep);
-                    app.CloseAllDocuments(true);
+                    CloseAll(app);
                     BatchExportTest(app, dir);
-                    app.CloseAllDocuments(true);
+                    CloseAll(app);
                     AutoSaveTest(app, dir);
                     AddInConfigTest(app);
+                    CloseAll(app);
+                    TabTest(app);
                 }
                 finally
                 {
@@ -320,7 +323,7 @@ namespace Lbr.CadTools.SmokeTest
 
             Step("Import into an open 2D sketch on the Top plane");
             // Template order is Front, Top, Right; found by type so language does not matter.
-            IFeature top = Features(part).Where(f => f.GetTypeName2() == "RefPlane").ElementAt(1);
+            IFeature top = Planes(part).ElementAt(1);
             top.Select2(false, 0);
             part.SketchManager.InsertSketch(true);
             ISketch sketch2d = part.SketchManager.ActiveSketch;
@@ -482,7 +485,7 @@ namespace Lbr.CadTools.SmokeTest
             Step("Auto-save: busy detection");
             int err = 0;
             app.ActivateDoc3(savedPath, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref err);
-            IFeature plane = Features(saved).First(f => f.GetTypeName2() == "RefPlane");
+            IFeature plane = Planes(saved).First();
             plane.Select2(false, 0);
             saved.SketchManager.InsertSketch(true);
             Check(AutoSaver.IsBusy(app, out busy), $"busy while editing a sketch ({busy})");
@@ -492,6 +495,44 @@ namespace Lbr.CadTools.SmokeTest
             Check(ran && AutoSaver.IsBusy(app, out busy), $"busy while the Fillet PropertyManager is open ({busy})");
             app.RunCommand(-1 /* swCommands_PmCancel */, "");
             Check(!AutoSaver.IsBusy(app, out busy), $"idle again after cancel (got {busy})");
+        }
+
+        // ---- Mounting tab generator (issue #7) ----
+
+        private static void TabTest(ISldWorks app)
+        {
+            const double inch = Units.MetersPerInch;
+
+            Step("Tab: lap belt, double shear, base contoured to a 1.5 in tube");
+            TabInputs lap = TabInputs.Defaults(TabUse.LapBelt);
+            lap.ContourTubeDiameter = 1.5 * inch;
+            CheckTab(app, lap, bodies: 2);
+
+            Step("Tab: seat, single shear, straight base");
+            CheckTab(app, TabInputs.Defaults(TabUse.Seat), bodies: 1);
+        }
+
+        private static void CheckTab(ISldWorks app, TabInputs t, int bodies)
+        {
+            IModelDoc2 doc = TabBuilder.Build(app, t);
+            object[] solids = ((IPartDoc)doc).GetBodies2((int)swBodyType_e.swSolidBody, false) as object[] ?? new object[0];
+            Check(solids.Length == bodies, $"{bodies} solid bodies (got {solids.Length})");
+
+            double volume = doc.Extension.CreateMassProperty().Volume;
+            double expected = bodies * TabGeometry.Area(t) * t.Thickness;
+            Console.WriteLine($"  volume {volume * 1e9:F1} mm3, expected {expected * 1e9:F1} mm3");
+            Check(Math.Abs(volume - expected) / expected < 1e-4, "volume matches the computed outline");
+
+            var box = (double[])((IPartDoc)doc).GetPartBox(true);
+            double width = box[3] - box[0], height = box[4] - box[1], depth = box[5] - box[2];
+            double expectDepth = bodies == 2 ? 2 * t.Thickness + t.Gap : t.Thickness;
+            Console.WriteLine($"  box {width * 1000:F2} x {height * 1000:F2} x {depth * 1000:F2} mm");
+            Check(Math.Abs(width - t.BaseWidth) < 1e-6, "width is B");
+            Check(Math.Abs(height - (t.Length + t.EndDiameter / 2)) < 1e-6, "height is L + D2/2");
+            Check(Math.Abs(depth - expectDepth) < 1e-6, bodies == 2 ? "depth is 2t + gap" : "depth is t");
+
+            doc.Extension.get_CustomPropertyManager("").Get6("Description", false, out _, out string description, out _, out _);
+            Check(description == TabRules.Describe(t), $"Description property set ({description})");
         }
 
         // ---- Add-in config (issue #9) ----
@@ -547,7 +588,7 @@ namespace Lbr.CadTools.SmokeTest
 
         private static void AddSketchLine(IModelDoc2 doc)
         {
-            IFeature plane = Features(doc).First(f => f.GetTypeName2() == "RefPlane");
+            IFeature plane = Planes(doc).First();
             plane.Select2(false, 0);
             doc.SketchManager.InsertSketch(true);
             doc.SketchManager.CreateLine(0, 0, 0, 0.01, 0.01, 0);
@@ -558,7 +599,7 @@ namespace Lbr.CadTools.SmokeTest
         private static string CreateSheetMetalPart(ISldWorks app, string dir, string name)
         {
             IModelDoc2 doc = NewPart(app);
-            IFeature plane = Features(doc).First(f => f.GetTypeName2() == "RefPlane");
+            IFeature plane = Planes(doc).First();
             plane.Select2(false, 0);
             doc.SketchManager.InsertSketch(true);
             doc.SketchManager.CreateCornerRectangle(0, 0, 0, 0.060, 0.040, 0);
@@ -609,6 +650,17 @@ namespace Lbr.CadTools.SmokeTest
 
         // ---- Model building helpers ----
 
+        /// <summary>
+        /// Closes everything and gives SolidWorks a moment to finish. Creating
+        /// a part right after closing the Batch Export documents sometimes gave
+        /// a document whose features all threw RPC_E_SERVERFAULT.
+        /// </summary>
+        private static void CloseAll(ISldWorks app)
+        {
+            app.CloseAllDocuments(true);
+            System.Threading.Thread.Sleep(2000);
+        }
+
         private static IModelDoc2 NewPart(ISldWorks app)
         {
             string template = app.GetUserPreferenceStringValue((int)swUserPreferenceStringValue_e.swDefaultTemplatePart);
@@ -621,8 +673,8 @@ namespace Lbr.CadTools.SmokeTest
             IModelDoc2 doc = NewPart(app);
 
             // First reference plane, found by type so template language does not matter.
-            IFeature plane = Features(doc).FirstOrDefault(f => f.GetTypeName2() == "RefPlane")
-                ?? throw new InvalidOperationException("No reference plane in part template");
+            IFeature plane = Planes(doc).FirstOrDefault()
+                ?? throw new InvalidOperationException("No reference plane in part template: " + Diagnose(doc));
             plane.Select2(false, 0);
             doc.SketchManager.InsertSketch(true);
             doc.SketchManager.CreateCornerRectangle(0, 0, 0, width, 0.020, 0);
@@ -686,6 +738,38 @@ namespace Lbr.CadTools.SmokeTest
 
         private static List<IComponent2> TopLevel(IModelDoc2 assembly) =>
             (((IAssemblyDoc)assembly).GetComponents(true) as object[] ?? new object[0]).Cast<IComponent2>().ToList();
+
+        /// <summary>
+        /// Reference planes in tree order (Front, Top, Right). Right after many
+        /// documents close, GetTypeName2 on a new document's features can throw
+        /// RPC_E_SERVERFAULT out of process; such a feature is skipped.
+        /// </summary>
+        private static IEnumerable<IFeature> Planes(IModelDoc2 doc) =>
+            Features(doc).Where(f =>
+            {
+                try
+                {
+                    return f.GetTypeName2() == "RefPlane";
+                }
+                catch (COMException)
+                {
+                    return false;
+                }
+            });
+
+        private static string Diagnose(IModelDoc2 doc)
+        {
+            var parts = new List<string> { $"type {doc.GetType()}, title {doc.GetTitle()}" };
+            foreach (IFeature f in Features(doc).Take(8))
+            {
+                string name, type;
+                try { name = f.Name; } catch (Exception ex) { name = "!" + ex.GetType().Name; }
+                try { type = f.GetTypeName2(); } catch (Exception ex) { type = "!" + ex.GetType().Name; }
+                try { if (type.StartsWith("!")) type += "/" + f.GetTypeName(); } catch (Exception ex) { type += "/!" + ex.GetType().Name; }
+                parts.Add($"{name}:{type}");
+            }
+            return string.Join(" | ", parts);
+        }
 
         private static IEnumerable<IFeature> Features(IModelDoc2 doc)
         {
