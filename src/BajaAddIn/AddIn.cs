@@ -4,7 +4,9 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Lbr.CadTools.AddIn.Commands;
+using Lbr.CadTools.AddIn.Features.AddInConfig;
 using Lbr.CadTools.AddIn.Features.AutoSave;
+using Lbr.CadTools.Core;
 using Lbr.CadTools.AddIn.Util;
 using Microsoft.Win32;
 using SolidWorks.Interop.sldworks;
@@ -36,11 +38,22 @@ namespace Lbr.CadTools.AddIn
         private ICommandManager commandManager;
         private int cookie;
         private List<IAddInCommand> commands = new List<IAddInCommand>();
+        private int[] commandUserIds = new int[0];
         private AutoSaver autoSaver;
+        private System.Windows.Forms.Timer startupTimer;
 
-        // List order is button order. Changing the list rebuilds the command
-        // group on the next load (see AddCommandGroup).
-        private List<IAddInCommand> CreateCommands() => new List<IAddInCommand>
+        /// <summary>Registry form of the class GUID, e.g. "{1fd92743-...}".</summary>
+        internal static string Clsid => "{" + typeof(AddIn).GUID + "}";
+
+        /// <summary>Problems from the last settings load and add-in config run, for the Settings window.</summary>
+        internal List<string> SettingsProblems { get; } = new List<string>();
+
+        internal AutoSaver AutoSaver => autoSaver;
+
+        // List order is button order, and each command's index here is its
+        // stable user ID. Changing the shown list rebuilds the command group on
+        // the next load (see AddCommandGroup).
+        internal List<IAddInCommand> AllCommands() => new List<IAddInCommand>
         {
             new SetFixedStateCommand(fix: true),
             new SetFixedStateCommand(fix: false),
@@ -49,8 +62,39 @@ namespace Lbr.CadTools.AddIn
             new ExportPointsCommand(),
             new BatchExportCommand(),
             new AutoSaveCommand(() => autoSaver),
+            new SettingsCommand(this),
             new AboutCommand(),
         };
+
+        /// <summary>All commands minus those hidden in settings.json. Settings can never be hidden.</summary>
+        private void CreateCommands(AddInSettings settings)
+        {
+            List<IAddInCommand> all = AllCommands();
+            var shown = new List<IAddInCommand>();
+            var ids = new List<int>();
+            for (int i = 0; i < all.Count; i++)
+            {
+                bool hidden = !(all[i] is SettingsCommand)
+                              && settings.HiddenCommands.Contains(all[i].Title, StringComparer.OrdinalIgnoreCase);
+                if (!hidden)
+                {
+                    shown.Add(all[i]);
+                    ids.Add(i);
+                }
+            }
+            commands = shown;
+            commandUserIds = ids.ToArray();
+            Log.Info($"Commands shown: {commands.Count} of {all.Count}");
+        }
+
+        /// <summary>Settings problems that are about command names.</summary>
+        internal IEnumerable<string> UnknownHiddenCommands(AddInSettings settings)
+        {
+            List<string> titles = AllCommands().Select(c => c.Title).ToList();
+            return settings.HiddenCommands
+                .Where(h => !titles.Contains(h, StringComparer.OrdinalIgnoreCase))
+                .Select(h => $"commands.hidden: no button called \"{h}\". Buttons: {string.Join(", ", titles)}.");
+        }
 
         // ---- ISwAddin ----
 
@@ -70,9 +114,15 @@ namespace Lbr.CadTools.AddIn
                 commandManager = app.GetCommandManager(cookie);
                 Log.Info($"GetCommandManager -> {(commandManager == null ? "null" : "ok")}");
 
-                commands = CreateCommands();
+                AddInSettings settings = SettingsStore.Load();
+                SettingsProblems.Clear();
+                SettingsProblems.AddRange(SettingsStore.LastWarnings);
+                SettingsProblems.AddRange(UnknownHiddenCommands(settings));
+
+                CreateCommands(settings);
                 AddCommandGroup();
-                StartAutoSave();
+                StartAutoSave(settings);
+                ScheduleAddInConfig(settings);
                 Log.Info("ConnectToSW: done");
                 return true;
             }
@@ -88,6 +138,8 @@ namespace Lbr.CadTools.AddIn
             Log.Info("DisconnectFromSW");
             autoSaver?.Dispose();
             autoSaver = null;
+            startupTimer?.Dispose();
+            startupTimer = null;
             try
             {
                 RemoveCommandGroup();
@@ -116,17 +168,65 @@ namespace Lbr.CadTools.AddIn
             return true;
         }
 
-        private void StartAutoSave()
+        private void StartAutoSave(AddInSettings settings)
         {
             try
             {
                 autoSaver = new AutoSaver(app);
-                autoSaver.Apply(SettingsStore.Load().AutoSave);
+                autoSaver.Apply(settings.AutoSave);
             }
             catch (Exception ex)
             {
                 Log.Error("Auto-save not started", ex);
             }
+        }
+
+        /// <summary>
+        /// Loads and unloads other add-ins a moment after startup, from the
+        /// SolidWorks message loop, rather than from inside ConnectToSW.
+        /// </summary>
+        private void ScheduleAddInConfig(AddInSettings settings)
+        {
+            if (settings.LoadAddIns.Count == 0 && settings.UnloadAddIns.Count == 0)
+            {
+                return;
+            }
+            startupTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+            startupTimer.Tick += (s, e) =>
+            {
+                startupTimer.Stop();
+                ApplyAddInConfig(settings);
+                if (SettingsProblems.Count > 0 && app.Frame() is IFrame frame)
+                {
+                    frame.SetStatusBarText($"{Title}: {SettingsProblems.Count} settings problem(s); open Settings on the {Title} tab");
+                }
+            };
+            startupTimer.Start();
+        }
+
+        /// <summary>Runs the add-in load/unload lists; problems are added to <see cref="SettingsProblems"/>.</summary>
+        internal void ApplyAddInConfig(AddInSettings settings)
+        {
+            try
+            {
+                SettingsProblems.AddRange(AddInManager.Apply(app, settings, Clsid));
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Add-in config failed", ex);
+                SettingsProblems.Add("Add-in load/unload failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>Re-reads settings.json and applies what can change without a restart.</summary>
+        internal void ReloadSettings()
+        {
+            AddInSettings settings = SettingsStore.Load();
+            SettingsProblems.Clear();
+            SettingsProblems.AddRange(SettingsStore.LastWarnings);
+            SettingsProblems.AddRange(UnknownHiddenCommands(settings));
+            autoSaver?.Apply(settings.AutoSave);
+            ApplyAddInConfig(settings);
         }
 
         // ---- Command callbacks (called by SolidWorks by name; must stay public) ----
@@ -177,7 +277,7 @@ namespace Lbr.CadTools.AddIn
 
         private void AddCommandGroup()
         {
-            int[] userIds = Enumerable.Range(0, commands.Count).ToArray();
+            int[] userIds = commandUserIds;
 
             // Rebuild the group when the command list changed since the last load.
             bool ignorePrevious = true;
