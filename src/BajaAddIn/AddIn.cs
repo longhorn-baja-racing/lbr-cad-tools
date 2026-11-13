@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Lbr.CadTools.AddIn.Commands;
+using Lbr.CadTools.AddIn.Features.AutoSave;
 using Lbr.CadTools.AddIn.Util;
 using Microsoft.Win32;
 using SolidWorks.Interop.sldworks;
@@ -35,10 +36,11 @@ namespace Lbr.CadTools.AddIn
         private ICommandManager commandManager;
         private int cookie;
         private List<IAddInCommand> commands = new List<IAddInCommand>();
+        private AutoSaver autoSaver;
 
         // List order is button order. Changing the list rebuilds the command
         // group on the next load (see AddCommandGroup).
-        private static List<IAddInCommand> CreateCommands() => new List<IAddInCommand>
+        private List<IAddInCommand> CreateCommands() => new List<IAddInCommand>
         {
             new SetFixedStateCommand(fix: true),
             new SetFixedStateCommand(fix: false),
@@ -46,6 +48,7 @@ namespace Lbr.CadTools.AddIn
             new ImportPointsCommand(),
             new ExportPointsCommand(),
             new BatchExportCommand(),
+            new AutoSaveCommand(() => autoSaver),
             new AboutCommand(),
         };
 
@@ -69,6 +72,7 @@ namespace Lbr.CadTools.AddIn
 
                 commands = CreateCommands();
                 AddCommandGroup();
+                StartAutoSave();
                 Log.Info("ConnectToSW: done");
                 return true;
             }
@@ -82,6 +86,8 @@ namespace Lbr.CadTools.AddIn
         public bool DisconnectFromSW()
         {
             Log.Info("DisconnectFromSW");
+            autoSaver?.Dispose();
+            autoSaver = null;
             try
             {
                 RemoveCommandGroup();
@@ -108,6 +114,19 @@ namespace Lbr.CadTools.AddIn
             GC.Collect();
             GC.WaitForPendingFinalizers();
             return true;
+        }
+
+        private void StartAutoSave()
+        {
+            try
+            {
+                autoSaver = new AutoSaver(app);
+                autoSaver.Apply(SettingsStore.Load().AutoSave);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Auto-save not started", ex);
+            }
         }
 
         // ---- Command callbacks (called by SolidWorks by name; must stay public) ----
