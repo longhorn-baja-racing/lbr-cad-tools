@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    LBR-CAD-Tools-Setup.exe: one-file installer for team members. The add-in
+    build output (including the SolidWorks interop assemblies it was built
+    against) is embedded as resources under "payload/". Windows + SolidWorks
+    interop needed to build, like the add-in itself; scripts/release.ps1
+    builds and publishes it.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>Lbr.CadTools.Setup</RootNamespace>
+    <AssemblyName>LBR-CAD-Tools-Setup</AssemblyName>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>$(BaseIntermediateOutputPath)setup.ico</ApplicationIcon>
+    <AddInOutput>..\BajaAddIn\bin\$(Configuration)\net48\</AddInOutput>
+    <IconGenExe>..\..\tools\IconGen\bin\$(Configuration)\net48\IconGen.exe</IconGenExe>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\BajaAddIn\Util\Brand.cs" Link="Brand.cs" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Build order only: the add-in output is embedded, IconGen draws the icon. -->
+  <ItemGroup>
+    <ProjectReference Include="..\BajaAddIn\BajaAddIn.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\tools\IconGen\IconGen.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <!-- Added after the references are built, so a clean build finds the files. -->
+  <Target Name="EmbedPayload" AfterTargets="ResolveProjectReferences" BeforeTargets="PrepareResources">
+    <ItemGroup>
+      <Payload Include="$(AddInOutput)BajaAddIn.dll;$(AddInOutput)BajaAddIn.Core.dll;$(AddInOutput)SolidWorks.Interop.sldworks.dll;$(AddInOutput)SolidWorks.Interop.swconst.dll;$(AddInOutput)SolidWorks.Interop.swpublished.dll" />
+      <EmbeddedResource Include="@(Payload)" LogicalName="payload/%(Filename)%(Extension)" />
+    </ItemGroup>
+    <Error Condition="!Exists('%(Payload.Identity)')" Text="Setup payload missing: %(Payload.Identity)" />
+  </Target>
+
+  <Target Name="MakeIcon" AfterTargets="ResolveProjectReferences" BeforeTargets="CoreCompile"
+          Inputs="..\BajaAddIn\Util\Brand.cs;$(IconGenExe)" Outputs="$(BaseIntermediateOutputPath)setup.ico">
+    <Exec Command="&quot;$(IconGenExe)&quot; &quot;$(BaseIntermediateOutputPath)setup.ico&quot;" />
+  </Target>
+</Project>
