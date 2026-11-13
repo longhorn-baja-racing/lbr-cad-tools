@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    SolidWorks add-in. Builds on Windows only: the interop assemblies come from
+    the local SolidWorks install and are never committed (see docs/PLAN.md,
+    open question 1). Override the location with
+      dotnet build -p:SwInteropDir="D:\path\to\api\redist"
+    or by setting the SwInteropDir environment variable.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <RootNamespace>Lbr.CadTools.AddIn</RootNamespace>
+    <AssemblyName>BajaAddIn</AssemblyName>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <SwInstallDir Condition="'$(SwInstallDir)' == ''">C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS</SwInstallDir>
+    <SwInteropDir Condition="'$(SwInteropDir)' == ''">$(SwInstallDir)\api\redist</SwInteropDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Private=true: copy the interop assemblies next to BajaAddIn.dll. RegAsm
+      must resolve ISwAddin (swpublished) to register the add-in, and the copies
+      act as a fallback if a newer SolidWorks ships different versions.
+    -->
+    <Reference Include="SolidWorks.Interop.sldworks">
+      <HintPath>$(SwInteropDir)\SolidWorks.Interop.sldworks.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swconst">
+      <HintPath>$(SwInteropDir)\SolidWorks.Interop.swconst.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="SolidWorks.Interop.swpublished">
+      <HintPath>$(SwInteropDir)\SolidWorks.Interop.swpublished.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BajaAddIn.Core\BajaAddIn.Core.csproj" />
+  </ItemGroup>
+
+  <Target Name="CheckSolidWorksInterop" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(SwInteropDir)\SolidWorks.Interop.sldworks.dll')"
+           Text="SolidWorks interop assemblies not found in '$(SwInteropDir)'. Install SolidWorks or set SwInteropDir. To build only the SolidWorks-free projects, use: dotnet build LbrCadTools.CI.slnf" />
+  </Target>
+</Project>
