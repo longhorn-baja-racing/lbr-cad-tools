@@ -60,13 +60,39 @@ namespace Lbr.CadTools.Core
 
             if (changed > 0)
             {
-                sb.Append(fix
-                    ? "\n\nCtrl+Z cannot undo this. Use Float All to reverse it."
-                    : "\n\nCtrl+Z cannot undo this. Use Fix All to reverse it.");
+                sb.Append("\n\nCtrl+Z cannot undo this. Use Restore Fix States to undo it.");
             }
             if (fix && changed > 0)
             {
                 sb.Append("\nFixing applies to all configurations.");
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Message for Restore Fix States.</summary>
+        /// <param name="lastActionWasFix">True when the action being undone was Fix All.</param>
+        /// <param name="restored">Components put back.</param>
+        /// <param name="skipped">Components removed or changed by hand since.</param>
+        public static string FormatRestore(bool lastActionWasFix, int restored, int skipped)
+        {
+            if (restored < 0) throw new ArgumentOutOfRangeException(nameof(restored));
+            if (skipped < 0) throw new ArgumentOutOfRangeException(nameof(skipped));
+
+            string state = lastActionWasFix ? "floating" : "fixed";
+            string action = lastActionWasFix ? "Fix All" : "Float All";
+            var sb = new StringBuilder();
+            if (restored > 0)
+            {
+                sb.Append($"Undid {action}: {Count(restored)} {Plural(restored, "component is", "components are")} {state} again.");
+            }
+            else
+            {
+                sb.Append($"Nothing to restore from the last {action}.");
+            }
+            if (skipped > 0)
+            {
+                sb.Append($"\n{Count(skipped)} {Plural(skipped, "component was", "components were")} skipped: " +
+                          $"{Plural(skipped, "it was", "they were")} removed or changed by hand since.");
             }
             return sb.ToString();
         }

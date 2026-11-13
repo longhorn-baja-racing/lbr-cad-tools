@@ -241,6 +241,19 @@ namespace Lbr.CadTools.SmokeTest
             Check(SubStates(sub).SequenceEqual(subOwnStates) && !sub.GetSaveFlag(),
                 "subassembly file untouched and not modified");
 
+            Step("Restore Fix States (back to the mixed start)");
+            var restore = ComponentFixer.Restore(top);
+            Console.WriteLine("  message: " + (restore == null ? "(null)"
+                : FixStateReport.FormatRestore(restore.Value.LastWasFix, restore.Value.Restored, restore.Value.Skipped)));
+            Check(restore != null && restore.Value.LastWasFix && restore.Value.Restored == 3 && restore.Value.Skipped == 0,
+                "3 restored, 0 skipped");
+            bool[] states = TopLevel(top).Select(c => c.IsFixed()).ToArray();
+            Check(states.SequenceEqual(new[] { true, false, false, false }), $"start states back (got {Show(states)})");
+            Check(ComponentFixer.Restore(top) == null, "second Restore has nothing to do");
+
+            ComponentFixer.Apply(top, true);
+            Check(TopLevel(top).All(c => c.IsFixed()), "Fix All again after restore");
+
             Step("Fix All again (nothing to do)");
             r = ComponentFixer.Apply(top, true);
             Report(true, r);
@@ -253,6 +266,13 @@ namespace Lbr.CadTools.SmokeTest
             Check(TopLevel(top).All(c => !c.IsFixed()), "all top-level components floating");
             Check(SubStates(sub).SequenceEqual(subOwnStates) && !sub.GetSaveFlag(),
                 "subassembly file untouched and not modified");
+
+            Step("Restore after one component was changed by hand");
+            SetFixed(top, TopLevel(top)[1], true);
+            restore = ComponentFixer.Restore(top);
+            Check(restore != null && !restore.Value.LastWasFix && restore.Value.Restored == 3 && restore.Value.Skipped == 1,
+                $"3 restored, 1 skipped (got {restore?.Restored}, {restore?.Skipped})");
+            Check(TopLevel(top).All(c => c.IsFixed()), "all fixed again");
 
         }
 
