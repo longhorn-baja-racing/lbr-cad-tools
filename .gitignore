@@ -1,0 +1,21 @@
+# Build output
+bin/
+obj/
+*.user
+*.suo
+.vs/
+TestResults/
+
+# SolidWorks temp and lock files
+~$*
+*.swbak
+*.SLDBAK
+
+# Rule book PDFs are SAE copyrighted. Download the current version from
+# https://www.bajasae.net/cdsweb/gen/DocumentResources.aspx instead.
+BAJA_RULES_*.pdf
+
+# OS clutter
+.DS_Store
+Thumbs.db
+desktop.ini
