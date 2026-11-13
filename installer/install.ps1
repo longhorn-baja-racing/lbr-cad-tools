@@ -8,6 +8,26 @@
 #>
 $ErrorActionPreference = 'Stop'
 
+# Runs 64-bit RegAsm and returns its exit code. RegAsm always prints warning
+# RA0000 (unsigned assembly) on stderr; with ErrorActionPreference=Stop,
+# PowerShell 5.1 would turn that line into a terminating error, so run it
+# with Continue and judge only by the exit code.
+function Invoke-RegAsm([string[]]$arguments) {
+    $regasm = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe'
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $lines = & $regasm @arguments 2>&1 | ForEach-Object { "$_" }
+        $code = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
+    if ($code -ne 0) {
+        $lines | Where-Object { $_ -notmatch 'RA0000' } | ForEach-Object { Write-Host "  $_" }
+    }
+    return $code
+}
 function Finish([int]$code) {
     Write-Host ''
     Read-Host 'Press Enter to close' | Out-Null
@@ -55,7 +75,7 @@ try {
     $installed = Join-Path $target $dllName
     if (Test-Path $installed) {
         Write-Host 'Removing the previous version...'
-        & $regasm /unregister /nologo $installed | Out-Null
+        Invoke-RegAsm @('/unregister', '/nologo', $installed) | Out-Null
         Remove-Item (Join-Path $target '*') -Recurse -Force
     }
     New-Item -ItemType Directory -Force $target | Out-Null
@@ -63,10 +83,9 @@ try {
     Write-Host "Copied to $target"
 
     Write-Host 'Registering with SolidWorks...'
-    $output = & $regasm /codebase /nologo $installed 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        $output | ForEach-Object { Write-Host "  $_" }
-        throw "Registration failed (RegAsm exit code $LASTEXITCODE)."
+    $code = Invoke-RegAsm @('/codebase', '/nologo', $installed)
+    if ($code -ne 0) {
+        throw "Registration failed (RegAsm exit code $code)."
     }
 
     # Compare with the SolidWorks version the release was built against.
