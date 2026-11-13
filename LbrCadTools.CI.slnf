@@ -1,0 +1,9 @@
+{
+  "solution": {
+    "path": "LbrCadTools.sln",
+    "projects": [
+      "src\\BajaAddIn.Core\\BajaAddIn.Core.csproj",
+      "tests\\BajaAddIn.Core.Tests\\BajaAddIn.Core.Tests.csproj"
+    ]
+  }
+}
