@@ -9,6 +9,7 @@ using Lbr.CadTools.AddIn.Features.AutoSave;
 using Lbr.CadTools.AddIn.Features.BatchExport;
 using Lbr.CadTools.AddIn.Features.FixComponents;
 using Lbr.CadTools.AddIn.Features.SketchPoints;
+using Lbr.CadTools.AddIn.Features.Suspension;
 using Lbr.CadTools.AddIn.Features.Tabs;
 using Lbr.CadTools.Core;
 using SolidWorks.Interop.sldworks;
@@ -128,6 +129,8 @@ namespace Lbr.CadTools.SmokeTest
                     AddInConfigTest(app);
                     CloseAll(app);
                     TabTest(app);
+                    CloseAll(app);
+                    SuspensionTest(app, dir);
                 }
                 finally
                 {
@@ -496,6 +499,99 @@ namespace Lbr.CadTools.SmokeTest
             Check(ran && AutoSaver.IsBusy(app, out busy), $"busy while the Fillet PropertyManager is open ({busy})");
             app.RunCommand(-1 /* swCommands_PmCancel */, "");
             Check(!AutoSaver.IsBusy(app, out busy), $"idle again after cancel (got {busy})");
+        }
+
+        // ---- Suspension check (issue #12) ----
+
+        private static void SuspensionTest(ISldWorks app, string dir)
+        {
+            const double camber = -1.5, toe = 0.3, caster = 7, kpi = 9;
+            const double radius = 11.5 * Units.MetersPerInch; // default tire radius setting
+            Step("Suspension: hardpoints part with named reference points");
+
+            // Vehicle coordinates (X forward, Y left, Z up) -> SolidWorks default model axes (X left, Y up, Z forward).
+            Vec3 Model(Vec3 v) => new Vec3(v.Y, v.Z, v.X);
+            var points = new Dictionary<string, Vec3>();
+            foreach (Corner corner in new[] { Corner.FL, Corner.FR })
+            {
+                int side = corner == Corner.FL ? 1 : -1;
+                double c = camber * Math.PI / 180, t = toe * Math.PI / 180;
+                var spin = new Vec3(Math.Sin(t) * Math.Cos(c), side * Math.Cos(t) * Math.Cos(c), -Math.Sin(c));
+                var wc = new Vec3(1.5, side * 0.65, radius);
+                var steer = new Vec3(-Math.Tan(caster * Math.PI / 180), -side * Math.Tan(kpi * Math.PI / 180), 1).Unit();
+                var lbj = new Vec3(1.5, side * 0.58, 0.15);
+                points[Hardpoints.Name(Hardpoints.Wc, corner)] = wc;
+                points[Hardpoints.Name(Hardpoints.Sa, corner)] = wc - spin * 0.08;
+                points[Hardpoints.Name(Hardpoints.Lbj, corner)] = lbj;
+                points[Hardpoints.Name(Hardpoints.Ubj, corner)] = lbj + steer * 0.22;
+            }
+            points[Hardpoints.Name(Hardpoints.Wc, Corner.RL)] = new Vec3(0, 0.6, radius);
+
+            IModelDoc2 part = NewPart(app);
+            part.SketchManager.Insert3DSketch(true);
+            part.SketchManager.AddToDB = true;
+            foreach (Vec3 v in points.Values)
+            {
+                Vec3 m = Model(v);
+                part.SketchManager.CreatePoint(m.X, m.Y, m.Z);
+            }
+            part.SketchManager.AddToDB = false;
+            part.SketchManager.Insert3DSketch(true);
+            var sketch = (ISketch)((IFeature)part.FeatureByPositionReverse(0)).GetSpecificFeature2();
+
+            int named = 0;
+            foreach (ISketchPoint sp in ((sketch.GetSketchPoints2() as object[]) ?? new object[0]).Cast<ISketchPoint>())
+            {
+                var at = new Vec3(sp.X, sp.Y, sp.Z);
+                string name = points.First(p => (Model(p.Value) - at).Length < 1e-9).Key;
+                part.ClearSelection2(true);
+                sp.Select4(false, null);
+                object created = part.FeatureManager.InsertReferencePoint(
+                    (int)swRefPointType_e.swRefPointSketchPoint, 0, 0, 1);
+                // Renaming through the returned object faults out of process; use a fresh handle.
+                if (created != null && part.FeatureByPositionReverse(0) is IFeature f && f.GetTypeName2() == "RefPoint")
+                {
+                    f.Name = name;
+                    named++;
+                }
+            }
+            part.ClearSelection2(true);
+            Check(named == points.Count, $"{points.Count} reference points created and named (got {named})");
+            string sub = Path.Combine(dir, "suspension");
+            Directory.CreateDirectory(sub);
+            string partPath = Save(part, Path.Combine(sub, "Hardpoints.SLDPRT"));
+
+            Step("Suspension: read through an assembly (component moved off origin)");
+            IModelDoc2 asm = NewAssembly(app);
+            IComponent2 component = AddComponent(asm, partPath, 0.25);
+            // AddComponent5 places the part by its bounding box center, so read the real offset.
+            var xform = (double[])component.Transform2.ArrayData;
+            var offset = new Vec3(xform[9], xform[10], xform[11]);
+            Console.WriteLine($"  component offset {offset}");
+            HardpointReader.Result read = HardpointReader.Read(app, asm);
+            Check(read.Points.Count == points.Count && read.Problems.Count == 0,
+                $"{points.Count} points read, no problems (got {read.Points.Count}, {string.Join("; ", read.Problems)})");
+            Vec3 ubj = read.Points[Hardpoints.Name(Hardpoints.Ubj, Corner.FL)];
+            Vec3 expectedUbj = Model(points[Hardpoints.Name(Hardpoints.Ubj, Corner.FL)]) + offset;
+            Check((ubj - expectedUbj).Length < 1e-9, $"point moved by the component transform (got {ubj}, expected {expectedUbj})");
+
+            var problems = new List<string>();
+            var settings = new SuspensionSettings();
+            // The offset moves every point (sideways too, which decides left and right),
+            // so take it back out: the hardpoints are meant to be in car coordinates.
+            foreach (string key in read.Points.Keys.ToList())
+            {
+                read.Points[key] = read.Points[key] - offset;
+            }
+            (List<CornerGeometry> corners, SteeringGeometry steering) = HardpointReader.Compute(read, settings, problems);
+            Console.WriteLine("  " + SuspensionMath.Report(corners, steering).Replace("\n", "\n  "));
+            Check(problems.Count == 0, $"no problems (got {string.Join("; ", problems)})");
+            Check(corners.Count == 2, $"2 front corners (got {corners.Count})");
+            Check(corners.All(g => Math.Abs(g.Camber - camber) < 1e-6 && Math.Abs(g.Toe - toe) < 1e-6
+                                   && Math.Abs(g.Caster - caster) < 1e-6 && Math.Abs(g.Kpi - kpi) < 1e-6),
+                "camber, toe, caster, and KPI match what the points were built with");
+            Check(steering != null && steering.Straight && Math.Abs(steering.Wheelbase - 1.5) < 1e-3,
+                $"straight ahead, wheelbase 1.5 m (got {steering?.Wheelbase:0.####})");
         }
 
         // ---- Mounting tab generator (issue #7) ----
