@@ -14,9 +14,17 @@ namespace Lbr.CadTools.AddIn.Commands
     {
         public string Title => "Mounting Tab";
 
-        public string Hint => "Make a single or double shear mounting tab part sized and checked against Baja SAE B.12.2";
+        public string Hint => "Create a welded bolt tab part sized from the Baja SAE B.12.2 table, with live rule checks";
 
-        public string IconText => "TB";
+        public string Usage =>
+            "1. Pick what the tab holds (lap belt, anti-sub belt, seat, fire extinguisher, fuel tank). The rule sizes fill in.\n" +
+            "2. Adjust sizes as needed. The rule check updates as you type.\n" +
+            "3. Generate makes a new, unsaved part. Any rule warnings are also saved in its \"Tab Rule Check\" property.\n" +
+            "Weld the full base line; no cutouts or lightening holes (B.12.2.2).";
+
+        public ToolGroup Group => ToolGroup.VehicleDesign;
+
+        public ToolIcon Icon => ToolIcon.MountingTab;
 
         public IReadOnlyCollection<swDocumentTypes_e> DocumentTypes { get; } = new[]
         {

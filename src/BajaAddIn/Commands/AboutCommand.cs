@@ -14,9 +14,14 @@ namespace Lbr.CadTools.AddIn.Commands
     {
         public string Title => "About";
 
-        public string Hint => "Version, credits, and where to get help";
+        public string Hint => "Version, credits, the log folder, and where to report problems";
 
-        public string IconText => "i";
+        public string Usage =>
+            "Shows the add-in version and SolidWorks release, links to GitHub, and opens the log folder to attach to a bug report.";
+
+        public ToolGroup Group => ToolGroup.Help;
+
+        public ToolIcon Icon => ToolIcon.About;
 
         public IReadOnlyCollection<swDocumentTypes_e> DocumentTypes { get; } = new[]
         {

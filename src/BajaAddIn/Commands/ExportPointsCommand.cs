@@ -19,9 +19,16 @@ namespace Lbr.CadTools.AddIn.Commands
     {
         public string Title => "Export Points";
 
-        public string Hint => "Export the points of the open or selected sketch to a CSV file, in model coordinates";
+        public string Hint => "Save every point of the open or selected sketch to a CSV file, in model coordinates";
 
-        public string IconText => "PO";
+        public string Usage =>
+            "1. Open a sketch for editing, or select one in the FeatureManager design tree.\n" +
+            "2. Click Export Points, then choose the file and the units.\n" +
+            "Line and arc end points are included; the sketch origin is not.";
+
+        public ToolGroup Group => ToolGroup.SketchPoints;
+
+        public ToolIcon Icon => ToolIcon.ExportPoints;
 
         public IReadOnlyCollection<swDocumentTypes_e> DocumentTypes { get; } = new[]
         {

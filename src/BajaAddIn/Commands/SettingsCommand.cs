@@ -18,9 +18,15 @@ namespace Lbr.CadTools.AddIn.Commands
 
         public string Title => "Settings";
 
-        public string Hint => "Settings file, hidden buttons, and add-ins to load or unload at startup";
+        public string Hint => "Hide buttons, load or unload other add-ins at startup, and check settings.json for problems";
 
-        public string IconText => "ST";
+        public string Usage =>
+            "Opens settings.json in Notepad, lists problems in it, and shows the add-in titles on this computer.\n" +
+            "Apply now re-reads the file. Hidden buttons change at the next SolidWorks start.";
+
+        public ToolGroup Group => ToolGroup.Help;
+
+        public ToolIcon Icon => ToolIcon.Settings;
 
         public IReadOnlyCollection<swDocumentTypes_e> DocumentTypes { get; } = new[]
         {

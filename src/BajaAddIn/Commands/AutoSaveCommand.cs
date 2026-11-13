@@ -21,9 +21,15 @@ namespace Lbr.CadTools.AddIn.Commands
 
         public string Title => "Auto-Save";
 
-        public string Hint => "Turn timed saving of modified documents on or off";
+        public string Hint => "Save modified documents automatically every few minutes; click to turn it on or off and set the interval";
 
-        public string IconText => "AS";
+        public string Usage =>
+            "Saves the real files, not recovery copies, so there is no going back to the last manual save.\n" +
+            "Skips documents that were never saved or are read-only, and waits while a command, PropertyManager, or sketch is open.";
+
+        public ToolGroup Group => ToolGroup.Files;
+
+        public ToolIcon Icon => ToolIcon.AutoSave;
 
         public IReadOnlyCollection<swDocumentTypes_e> DocumentTypes { get; } = new[]
         {
