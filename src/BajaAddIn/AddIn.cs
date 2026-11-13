@@ -44,6 +44,7 @@ namespace Lbr.CadTools.AddIn
             new SetFixedStateCommand(fix: false),
             new ImportPointsCommand(),
             new ExportPointsCommand(),
+            new BatchExportCommand(),
             new AboutCommand(),
         };
 

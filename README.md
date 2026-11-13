@@ -37,7 +37,7 @@ baja-cad-tools/
 - [x] Set up Visual Studio C# class library project for SolidWorks COM Add-in
 - [x] Build CSV Point Cloud Importer and Exporter macros
 - [x] Build Fix All Top-Level Components macro
-- [ ] Build Batch Exporter (STEP, DXF, PDF)
+- [x] Build Batch Exporter (STEP, DXF, PDF)
 
 ### Phase 2: Assembly Management and Rule Book Automation
 - [ ] Implement Parametric Part Numbering via CustomPropertyManager
