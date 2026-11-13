@@ -57,6 +57,30 @@ baja-cad-tools/
 3. Verify that the SolidWorks API references (`SolidWorks.Interop.sldworks`, `SolidWorks.Interop.swconst`) match your installed SolidWorks version.
 4. Build the solution in Release mode to register the COM add-in, or run standalone `.swp` macros via `Tools -> Macro -> Run` inside SolidWorks.
 
+## Settings
+
+The add-in keeps its settings in `%LOCALAPPDATA%\LBR CAD Tools\settings.json`. Open it from the **Settings** button on the LBR CAD Tools tab, which also lists problems in the file and the add-in titles on your computer.
+
+```json
+{
+  "autoSave": {
+    "enabled": true,
+    "intervalMinutes": 10
+  },
+  "commands": {
+    "hidden": ["Import Points", "Export Points"]
+  },
+  "addIns": {
+    "load": ["Presentation Manager"],
+    "unload": ["3DEXPERIENCE Marketplace"]
+  }
+}
+```
+
+- `commands.hidden`: buttons to leave off the tab. Takes effect at the next SolidWorks start. Settings cannot be hidden.
+- `addIns.load` / `addIns.unload`: other add-ins to load or unload when SolidWorks starts, by title (as in Tools -> Add-Ins) or by DLL path (write `\\` for each `\`).
+- `autoSave`: also set by the **Auto-Save** button.
+
 ## Contributing and Requests
 
 Sub-team leads and members can request new automation tools or report bugs by opening an Issue in this repository. Include a sample part or assembly file and list the exact manual steps you want automated.

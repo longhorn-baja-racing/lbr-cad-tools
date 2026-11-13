@@ -6,7 +6,7 @@ namespace Lbr.CadTools.AddIn.Commands
 {
     /// <summary>
     /// One button on the LBR CAD Tools command tab. Add new commands to
-    /// <see cref="AddIn.CreateCommands"/>.
+    /// <see cref="AddIn.AllCommands"/>.
     /// </summary>
     internal interface IAddInCommand
     {

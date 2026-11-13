@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 namespace Lbr.CadTools.Core
 {
@@ -33,6 +34,15 @@ namespace Lbr.CadTools.Core
 
         public AutoSaveSettings AutoSave { get; } = new AutoSaveSettings();
 
+        /// <summary>Titles of LBR CAD Tools buttons to leave off the tab (applies at the next SolidWorks start).</summary>
+        public List<string> HiddenCommands { get; } = new List<string>();
+
+        /// <summary>Other add-ins to load at startup: titles from Tools > Add-Ins, or DLL paths.</summary>
+        public List<string> LoadAddIns { get; } = new List<string>();
+
+        /// <summary>Other add-ins to unload at startup: titles from Tools > Add-Ins, or DLL paths.</summary>
+        public List<string> UnloadAddIns { get; } = new List<string>();
+
         /// <summary>Parses settings; problems go to <paramref name="warnings"/>.</summary>
         /// <exception cref="JsonException">The text is not valid JSON.</exception>
         public static AddInSettings Parse(string json, List<string> warnings)
@@ -55,12 +65,69 @@ namespace Lbr.CadTools.Core
                     case "autoSave":
                         ReadAutoSave(pair.Value, settings.AutoSave, warnings);
                         break;
+                    case "commands":
+                        if (Section(pair.Value, "commands", warnings) is Dictionary<string, object> commands)
+                        {
+                            ReadStrings(commands, "hidden", "commands.hidden", settings.HiddenCommands, warnings);
+                        }
+                        break;
+                    case "addIns":
+                        if (Section(pair.Value, "addIns", warnings) is Dictionary<string, object> addIns)
+                        {
+                            ReadStrings(addIns, "load", "addIns.load", settings.LoadAddIns, warnings);
+                            ReadStrings(addIns, "unload", "addIns.unload", settings.UnloadAddIns, warnings);
+                            foreach (string both in settings.LoadAddIns.Intersect(settings.UnloadAddIns, StringComparer.OrdinalIgnoreCase).ToList())
+                            {
+                                warnings.Add($"\"{both}\" is in both addIns.load and addIns.unload; it is left alone.");
+                                settings.LoadAddIns.RemoveAll(s => string.Equals(s, both, StringComparison.OrdinalIgnoreCase));
+                                settings.UnloadAddIns.RemoveAll(s => string.Equals(s, both, StringComparison.OrdinalIgnoreCase));
+                            }
+                        }
+                        break;
                     default:
                         settings.unknown[pair.Key] = pair.Value;
                         break;
                 }
             }
             return settings;
+        }
+
+        private static object Section(object value, string name, List<string> warnings)
+        {
+            if (value is Dictionary<string, object>)
+            {
+                return value;
+            }
+            warnings.Add($"\"{name}\" must be an object; it is ignored.");
+            return null;
+        }
+
+        private static void ReadStrings(Dictionary<string, object> obj, string key, string name, List<string> target,
+                                        List<string> warnings)
+        {
+            if (!obj.TryGetValue(key, out object value) || value == null)
+            {
+                return;
+            }
+            if (!(value is List<object> list))
+            {
+                warnings.Add($"\"{name}\" must be a list like [\"a\", \"b\"]; it is ignored.");
+                return;
+            }
+            foreach (object item in list)
+            {
+                if (item is string s && s.Trim().Length > 0)
+                {
+                    if (!target.Contains(s.Trim(), StringComparer.OrdinalIgnoreCase))
+                    {
+                        target.Add(s.Trim());
+                    }
+                }
+                else
+                {
+                    warnings.Add($"\"{name}\" should only hold text; skipped {Json.Write(item).Trim()}.");
+                }
+            }
         }
 
         private static void ReadAutoSave(object value, AutoSaveSettings target, List<string> warnings)
@@ -105,6 +172,15 @@ namespace Lbr.CadTools.Core
                 {
                     ["enabled"] = AutoSave.Enabled,
                     ["intervalMinutes"] = AutoSave.IntervalMinutes,
+                },
+                ["commands"] = new Dictionary<string, object>
+                {
+                    ["hidden"] = HiddenCommands.Cast<object>().ToList(),
+                },
+                ["addIns"] = new Dictionary<string, object>
+                {
+                    ["load"] = LoadAddIns.Cast<object>().ToList(),
+                    ["unload"] = UnloadAddIns.Cast<object>().ToList(),
                 },
             };
             foreach (KeyValuePair<string, object> pair in unknown)
