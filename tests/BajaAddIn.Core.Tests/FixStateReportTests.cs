@@ -38,13 +38,13 @@ namespace Lbr.CadTools.Core.Tests
         public void FloatPointsToFixAllAndHasNoConfigurationNote()
         {
             string msg = FixStateReport.Format(false, 2, 0, None);
-            Assert.Equal("Floated 2 top-level components.\n\nCtrl+Z cannot undo this. Use Fix All to reverse it.", msg);
+            Assert.Equal("Floated 2 top-level components.\n\nCtrl+Z cannot undo this. Use Restore Fix States to undo it.", msg);
         }
 
         [Fact]
         public void FixPointsToFloatAll()
         {
-            Assert.Contains("Ctrl+Z cannot undo this. Use Float All to reverse it.", FixStateReport.Format(true, 1, 0, None));
+            Assert.Contains("Ctrl+Z cannot undo this. Use Restore Fix States to undo it.", FixStateReport.Format(true, 1, 0, None));
         }
 
         [Fact]
@@ -75,6 +75,27 @@ namespace Lbr.CadTools.Core.Tests
         public void NegativeCountsThrow()
         {
             Assert.Throws<ArgumentOutOfRangeException>(() => FixStateReport.Format(true, -1, 0, None));
+        }
+
+        [Fact]
+        public void Restore_after_fix_all()
+        {
+            Assert.Equal("Undid Fix All: 3 components are floating again.", FixStateReport.FormatRestore(true, 3, 0));
+        }
+
+        [Fact]
+        public void Restore_after_float_all_singular_with_skipped()
+        {
+            Assert.Equal(
+                "Undid Float All: 1 component is fixed again.\n" +
+                "2 components were skipped: they were removed or changed by hand since.",
+                FixStateReport.FormatRestore(false, 1, 2));
+        }
+
+        [Fact]
+        public void Restore_nothing()
+        {
+            Assert.Equal("Nothing to restore from the last Fix All.", FixStateReport.FormatRestore(true, 0, 0));
         }
     }
 }
