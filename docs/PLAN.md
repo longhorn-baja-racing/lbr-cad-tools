@@ -3,6 +3,27 @@
 Architecture decisions and per-feature implementation notes. API names are from
 the SolidWorks 2025/2026 API help (help.solidworks.com) unless noted.
 
+## Status (2026-11-13)
+
+| Feature | Issue | State |
+|---|---|---|
+| Add-in scaffold, command tab, register scripts | #2 | Done (PR #19) |
+| Fix All / Float All, Restore Fix States | #3, #20 | Done (PR #21, #24) |
+| CSV point import / export | #4 | Done (PR #22) |
+| Batch Exporter (incl. sheet metal flat pattern DXF) | #5 | Done (PR #23) |
+| Auto-Saver | #8 | Done (PR #25) |
+| Add-in trigger config (settings.json, Settings button) | #9 | Done (PR #26) |
+| Mounting tab generator | #7 | Done (PR #27, #28) |
+| Parametric part numbering | #6 | Waiting on #16 (numbering scheme) |
+| Ordered tube notcher | #11 | Waiting on #17 (frame method) |
+| Surface copier | #10 | Waiting on the requester (built-in Offset Surface may cover it) |
+| Suspension geometry monitor | #12 | Not started |
+| Auto drawing generator | #13 | Flat pattern DXF shipped in Batch Export; drawings are a stretch goal |
+
+The sections below are the original plan. Where the code went another way,
+the code and its comments win (for example, input forms are WinForms
+dialogs rather than PropertyManager pages, and tabs are separate parts).
+
 ## 1. Platform and stack
 
 | Decision | Choice | Reason |
@@ -26,7 +47,7 @@ the SolidWorks 2025/2026 API help (help.solidworks.com) unless noted.
 - Provide `scripts/register.ps1` and `scripts/unregister.ps1` so members do not hand-type RegAsm paths.
 - Registration code must never run during a Linux build.
 
-### Proposed layout
+### Proposed layout (actual folder names differ slightly; see src/)
 
 ```text
 src/BajaAddIn/
@@ -147,11 +168,15 @@ Convert at the UI boundary only.
 
 ## 4. Open questions for the team
 
-1. Interop DLL source for off-Windows builds. Dassault publishes no official NuGet package, and redistribution terms are unconfirmed. Options:
-   - a third-party NuGet package (for example Visiativ.SOLIDWORKS.Interop), pinned to a version;
-   - each developer copies the DLLs from `<SW install>\api\redist` into an untracked folder (does not work on Linux without a Windows install to copy from).
-2. Minimum SolidWorks version the team runs. This decides whether SW 2024+ APIs like `IComponent2.CustomPropertyManager` are available.
-3. Part numbering scheme: format, which fields, per configuration or per file, and who owns the counter.
-4. Mounting tabs: generate them as separate parts or as features in the frame part?
-5. Is the frame built with structural members (weldment profiles) or with Structure System? This decides the tube notcher approach.
-6. Does the team use SOLIDWORKS PDM or a shared drive? This affects the auto-saver and batch export paths.
+Decided:
+1. Interop DLL source: the local SolidWorks install (`$(SwInteropDir)`, see
+   build/SolidWorksInterop.props). Nothing is committed; CI builds only the
+   SolidWorks-free projects.
+4. Mounting tabs: separate parts for now (works with either frame method).
+   Revisit once #17 is decided.
+
+Still open (tracked as issues):
+2. Minimum SolidWorks version: #14.
+3. Part numbering scheme: #16.
+5. Frame modeling method (structural members or Structure System): #17.
+6. PDM or shared drive, and where sample CAD files live: #18.
