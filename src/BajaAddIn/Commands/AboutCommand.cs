@@ -14,10 +14,12 @@ namespace Lbr.CadTools.AddIn.Commands
     {
         public string Title => "About";
 
-        public string Hint => "Version, credits, the log folder, and where to report problems";
+        public string Hint => "Version, credits, log folder, and where to report problems";
 
-        public string Usage =>
-            "Shows the add-in version and SolidWorks release, links to GitHub, and opens the log folder to attach to a bug report.";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = "Shows the add-in and SolidWorks versions, links to the project on GitHub, and opens the log folder to attach to a bug report.",
+        };
 
         public ToolGroup Group => ToolGroup.Help;
 

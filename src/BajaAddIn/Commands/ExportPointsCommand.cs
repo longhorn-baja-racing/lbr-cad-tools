@@ -19,12 +19,23 @@ namespace Lbr.CadTools.AddIn.Commands
     {
         public string Title => "Export Points";
 
-        public string Hint => "Save every point of the open or selected sketch to a CSV file, in model coordinates";
+        public string Hint => "Save every point of a sketch to a CSV file";
 
-        public string Usage =>
-            "1. Open a sketch for editing, or select one in the FeatureManager design tree.\n" +
-            "2. Click Export Points, then choose the file and the units.\n" +
-            "Line and arc end points are included; the sketch origin is not.";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = "Writes the X, Y, Z position of every point in a sketch to a CSV file, in model coordinates. Use it to take hardpoints into Excel, Google Sheets, or another program.",
+            Needs = "Open a part or an assembly, then open or select a sketch.",
+            Steps = new[]
+            {
+                "Open a sketch for editing, or click one in the FeatureManager design tree (the feature list on the left).",
+                "Click Export Points.",
+                "Choose the file and the units, then click Export.",
+            },
+            Notes = new[]
+            {
+                "Line and arc end points are included; the sketch origin is not.",
+            },
+        };
 
         public ToolGroup Group => ToolGroup.SketchPoints;
 

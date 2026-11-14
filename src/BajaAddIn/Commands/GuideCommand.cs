@@ -9,21 +9,31 @@ using SolidWorks.Interop.swconst;
 
 namespace Lbr.CadTools.AddIn.Commands
 {
-    /// <summary>One window that explains every button, section by section.</summary>
+    /// <summary>
+    /// One window that explains every button: tools by section on the left,
+    /// the selected tool's help on the right, and a button to open it.
+    /// </summary>
     internal sealed class GuideCommand : IAddInCommand
     {
-        private readonly Func<IReadOnlyList<IAddInCommand>> allCommands;
+        private readonly Func<IReadOnlyList<IAddInCommand>> shownCommands;
+        private readonly Action<IAddInCommand> run;
 
-        public GuideCommand(Func<IReadOnlyList<IAddInCommand>> allCommands)
+        /// <param name="shownCommands">The commands on the tab.</param>
+        /// <param name="run">Runs a command the way a button click does.</param>
+        public GuideCommand(Func<IReadOnlyList<IAddInCommand>> shownCommands, Action<IAddInCommand> run)
         {
-            this.allCommands = allCommands;
+            this.shownCommands = shownCommands;
+            this.run = run;
         }
 
         public string Title => "Tool Guide";
 
-        public string Hint => "What every LBR CAD Tools button does, how to use it, and what it needs";
+        public string Hint => "What every LBR CAD Tools button does and how to use it";
 
-        public string Usage => "This window.";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = "This window: every tool, what it needs, and how to use it, step by step.",
+        };
 
         public ToolGroup Group => ToolGroup.Help;
 
@@ -38,113 +48,141 @@ namespace Lbr.CadTools.AddIn.Commands
 
         public bool IsEnabled(ISldWorks app) => true;
 
-        public void Execute(ISldWorks app)
+        public void Execute(ISldWorks app) => Show(app, null);
+
+        /// <summary>Opens the guide at <paramref name="start"/> (or the first tool), then runs the tool picked with Open.</summary>
+        public void Show(ISldWorks app, IAddInCommand start)
         {
-            using (var form = new GuideForm(allCommands().Where(c => !(c is GuideCommand)).ToList()))
+            IAddInCommand chosen;
+            List<IAddInCommand> tools = shownCommands().Where(c => !(c is GuideCommand)).ToList();
+            using (var form = new GuideForm(tools, c => SafeEnabled(c, app)))
             {
-                form.ShowDialog(Ui.MainWindow(app));
+                form.Start = start;
+                if (form.ShowDialog(Ui.MainWindow(app)) != DialogResult.OK)
+                {
+                    return;
+                }
+                chosen = form.Chosen;
+            }
+            if (chosen != null)
+            {
+                run(chosen);
+            }
+        }
+
+        private static bool SafeEnabled(IAddInCommand c, ISldWorks app)
+        {
+            try
+            {
+                return app == null || c.IsEnabled(app);
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 
         internal sealed class GuideForm : ToolForm
         {
-            public GuideForm(IReadOnlyList<IAddInCommand> commands)
+            private readonly Func<IAddInCommand, bool> isEnabled;
+            private readonly ToolNav nav;
+            private readonly HelpPage page;
+            private readonly Panel scroller;
+            private readonly Button open;
+            private readonly Label reason;
+
+            public GuideForm(IReadOnlyList<IAddInCommand> commands, Func<IAddInCommand, bool> isEnabled)
                 : base("Tool Guide",
-                    "Every button on the " + Brand.Product + " tab, section by section. " +
-                    "In SolidWorks, hover over a button for a one-line reminder.",
-                    ToolIcon.Guide, ToolGroup.Help, 600)
+                    "Every button on the " + Brand.Product + " tab, grouped the same way. " +
+                    "Pick a tool on the left to see what it does and how to use it.",
+                    ToolIcon.Guide, ToolGroup.Help, 760)
             {
+                this.isEnabled = isEnabled;
                 SuspendLayout();
-                var list = new FlowLayoutPanel
+                Body.Padding = Padding.Empty;
+
+                var split = new TableLayoutPanel
                 {
-                    FlowDirection = FlowDirection.TopDown,
-                    WrapContents = false,
-                    AutoSize = true,
+                    ColumnCount = 2,
+                    RowCount = 1,
+                    Size = new Size(ContentWidth + 40, 520),
                     Margin = Padding.Empty,
-                    Padding = new Padding(0, 0, 0, 8),
+                    Padding = Padding.Empty,
                 };
-                foreach (ToolGroup group in ToolGroups.Order)
-                {
-                    List<IAddInCommand> members = commands.Where(c => c.Group == group).ToList();
-                    if (members.Count == 0)
-                    {
-                        continue;
-                    }
-                    var heading = new SectionHeading(ToolGroups.Name(group), ToolGroups.Color(group))
-                    {
-                        Size = new Size(ContentWidth - 24, 26),
-                        Margin = new Padding(0, list.Controls.Count == 0 ? 4 : 18, 0, 0),
-                    };
-                    list.Controls.Add(heading);
-                    Label subtitle = Note(ToolGroups.Subtitle(group), ContentWidth - 24);
-                    subtitle.Margin = new Padding(0, 0, 0, 4);
-                    list.Controls.Add(subtitle);
-                    foreach (IAddInCommand c in members)
-                    {
-                        list.Controls.Add(Entry(c));
-                    }
-                }
+                split.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220));
+                split.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+                split.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-                var scroller = new Panel
+                nav = new ToolNav(commands) { Dock = DockStyle.Fill, Margin = Padding.Empty, TabIndex = 0 };
+                split.Controls.Add(nav, 0, 0);
+
+                scroller = new Panel
                 {
+                    Dock = DockStyle.Fill,
                     AutoScroll = true,
-                    Size = new Size(ContentWidth, 500),
-                    Margin = new Padding(0, 8, 0, 0),
+                    Margin = Padding.Empty,
+                    Padding = new Padding(28, 22, 24, 12),
+                    BackColor = Color.White,
                 };
-                scroller.Controls.Add(list);
-                Body.Controls.Add(scroller);
+                page = new HelpPage { Location = new Point(28, 22) };
+                scroller.Controls.Add(page);
+                scroller.Resize += (s, e) => FitPage();
+                split.Controls.Add(scroller, 1, 0);
+                Body.Controls.Add(split);
 
-                Button close = AddButton("Close", DialogResult.Cancel, primary: true);
+                reason = new Label
+                {
+                    AutoSize = true,
+                    ForeColor = Muted,
+                    Anchor = AnchorStyles.Left,
+                    Margin = new Padding(4, 7, 0, 0),
+                };
+                AddFooterLeft(reason);
+                Button close = AddButton("Close", DialogResult.Cancel);
+                open = AddButton("Open", DialogResult.OK, primary: true);
                 CancelButton = close;
-                AcceptButton = close;
+                AcceptButton = open;
+
+                nav.SelectionChanged += (s, e) => ShowSelected();
                 ResumeLayout(true);
             }
 
-            private Control Entry(IAddInCommand c)
-            {
-                int textWidth = ContentWidth - 24 - 52;
-                var row = new TableLayoutPanel { ColumnCount = 2, AutoSize = true, Margin = new Padding(0, 10, 0, 0) };
-                row.Controls.Add(new IconView(c.Icon, ToolGroups.Color(c.Group)) { Size = new Size(36, 36), Margin = new Padding(0, 2, 14, 0) }, 0, 0);
+            /// <summary>Tool to show first; null for the first one.</summary>
+            public IAddInCommand Start { get; set; }
 
-                var text = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoSize = true, Margin = Padding.Empty };
-                text.Controls.Add(new Label
-                {
-                    Text = c.Title,
-                    AutoSize = true,
-                    Font = new Font("Segoe UI Semibold", 10f),
-                    ForeColor = Brand.Ink,
-                    Margin = Padding.Empty,
-                });
-                text.Controls.Add(new Label
-                {
-                    Text = c.Hint + ".",
-                    AutoSize = true,
-                    MaximumSize = new Size(textWidth, 0),
-                    ForeColor = Brand.Ink,
-                    Margin = new Padding(0, 1, 0, 3),
-                });
-                text.Controls.Add(Note(c.Usage, textWidth));
-                Label where = Note("Works in: " + DocumentTypeNames(c.DocumentTypes), textWidth);
-                where.Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 8f, FontStyle.Italic);
-                where.Margin = new Padding(0, 3, 0, 0);
-                text.Controls.Add(where);
-                row.Controls.Add(text, 1, 0);
-                return row;
+            /// <summary>Tool picked with the Open button.</summary>
+            public IAddInCommand Chosen => nav.Selected;
+
+            protected override void OnLoad(EventArgs e)
+            {
+                base.OnLoad(e);
+                nav.SelectCommand(Start);
+                ActiveControl = nav;
             }
 
-            private static string DocumentTypeNames(IEnumerable<swDocumentTypes_e> types)
+            private void FitPage()
             {
-                var names = new List<string>();
-                foreach (swDocumentTypes_e t in types)
+                int w = scroller.ClientSize.Width - scroller.Padding.Horizontal;
+                if (w > 0 && page.Width != w)
                 {
-                    switch (t)
-                    {
-                        case swDocumentTypes_e.swDocPART: names.Add("parts"); break;
-                        case swDocumentTypes_e.swDocASSEMBLY: names.Add("assemblies"); break;
-                        case swDocumentTypes_e.swDocDRAWING: names.Add("drawings"); break;
-                    }
+                    page.Width = w;
                 }
-                return string.Join(", ", names);
+            }
+
+            private void ShowSelected()
+            {
+                IAddInCommand c = nav.Selected;
+                if (c == null)
+                {
+                    return;
+                }
+                scroller.AutoScrollPosition = Point.Empty;
+                FitPage();
+                page.Command = c;
+                bool enabled = isEnabled(c);
+                open.Text = "Open " + c.Title;
+                open.Enabled = enabled;
+                reason.Text = enabled || string.IsNullOrEmpty(c.Help.Needs) ? "" : "Not available yet: " + c.Help.Needs;
             }
         }
     }

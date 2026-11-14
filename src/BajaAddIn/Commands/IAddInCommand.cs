@@ -14,11 +14,11 @@ namespace Lbr.CadTools.AddIn.Commands
         /// <summary>Button and menu text.</summary>
         string Title { get; }
 
-        /// <summary>One sentence: what the button does. Tooltip, status bar, and Tool Guide.</summary>
+        /// <summary>One short sentence, no final period: what the button does. Tooltip, status bar, task pane.</summary>
         string Hint { get; }
 
-        /// <summary>How to use it and what it needs, for the Tool Guide. Lines separated by \n.</summary>
-        string Usage { get; }
+        /// <summary>Full help for the Tool Guide.</summary>
+        ToolHelp Help { get; }
 
         /// <summary>Tab section; also sets the icon color.</summary>
         ToolGroup Group { get; }

@@ -14,13 +14,24 @@ namespace Lbr.CadTools.AddIn.Commands
     {
         public string Title => "Mounting Tab";
 
-        public string Hint => "Create a welded bolt tab part sized from the Baja SAE B.12.2 table, with live rule checks";
+        public string Hint => "Make a welded bolt tab part sized to Baja SAE rule B.12.2";
 
-        public string Usage =>
-            "1. Pick what the tab holds (lap belt, anti-sub belt, seat, fire extinguisher, fuel tank). The rule sizes fill in.\n" +
-            "2. Adjust sizes as needed. The rule check updates as you type.\n" +
-            "3. Generate makes a new, unsaved part. Any rule warnings are also saved in its \"Tab Rule Check\" property.\n" +
-            "Weld the full base line; no cutouts or lightening holes (B.12.2.2).";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = "Builds a new part for a tab that is welded to a frame tube and holds a bolt, for a seat belt, seat, fire extinguisher, or fuel tank. Sizes start at the rule book minimums for what it holds, and a rule check updates as you type.",
+            Steps = new[]
+            {
+                "Click Mounting Tab.",
+                "Under Holds, pick what the tab is for. The rule sizes fill in.",
+                "Adjust the sizes if needed and watch the Rule check box.",
+                "Click Generate. A new, unsaved part opens.",
+            },
+            Notes = new[]
+            {
+                "Rule warnings are also saved in the part's \"Tab Rule Check\" custom property.",
+                "B.12.2.2: weld the full base line, and no cutouts or lightening holes.",
+            },
+        };
 
         public ToolGroup Group => ToolGroup.VehicleDesign;
 

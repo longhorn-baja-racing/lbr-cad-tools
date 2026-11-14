@@ -212,6 +212,9 @@ namespace Lbr.CadTools.AddIn.Util
             return button;
         }
 
+        /// <summary>Puts any control (a status label, say) at the footer's left end.</summary>
+        protected void AddFooterLeft(Control control) => leftButtons.Controls.Add(control);
+
         /// <summary>Gray explanatory text that wraps at <paramref name="width"/>.</summary>
         public static Label Note(string text, int width) => new Label
         {

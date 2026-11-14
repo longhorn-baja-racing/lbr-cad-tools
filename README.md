@@ -6,7 +6,9 @@ A SolidWorks add-in for Longhorn Baja Racing that automates repetitive CAD tasks
 
 ## Tools
 
-The tab is split into sections, each with its own icon color. **Tool Guide** (in Help and Setup) explains every button in SolidWorks itself, and hovering over a button shows a one-line description.
+The tab is split into sections, each with its own icon color. The same tools are also in the **LBR CAD Tools task pane** (the LBR icon on the right side of the SolidWorks window), with a heading and a short explanation for each section and tool. Click a tool there to run it, or its **?** to read how it works. Tools that do not apply to the open document are grayed out and say what they need.
+
+**Tool Guide** (in Help and Setup) explains every tool in SolidWorks itself: what it does, what to open first, step-by-step use, and tips. Hovering over a button on the tab shows a one-line description.
 
 ### Vehicle Design
 | Button | What it does |
@@ -35,7 +37,7 @@ The tab is split into sections, each with its own icon color. **Tool Guide** (in
 ### Help and Setup
 | Button | What it does |
 |---|---|
-| **Tool Guide** | Every button, section by section: what it does, how to use it, and which documents it works in. |
+| **Tool Guide** | Every tool, by section: what it does, what it needs, numbered steps, and tips. Open a tool straight from its page. |
 | **Settings** | Hide buttons you do not use, and load or unload other add-ins at startup. See [Settings](#settings). |
 | **About** | Version, credits, the GitHub link, and the log folder to attach to a bug report. |
 

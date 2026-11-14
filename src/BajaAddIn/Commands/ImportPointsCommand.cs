@@ -21,13 +21,25 @@ namespace Lbr.CadTools.AddIn.Commands
 
         public string Title => "Import Points";
 
-        public string Hint => "Add X, Y, Z points from a CSV file to the open sketch, or to a new 3D sketch";
+        public string Hint => "Place sketch points from a CSV file of X, Y, Z coordinates";
 
-        public string Usage =>
-            "1. Optional: open a 2D or 3D sketch for editing. Otherwise a new 3D sketch is made.\n" +
-            "2. Click Import Points and pick the CSV file.\n" +
-            "3. Check the units. They are read from the header when the file states them.\n" +
-            "Rows are X, Y, Z from the model origin. A header row and extra columns are fine. Points off a 2D sketch plane are projected onto it.";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = "Reads a CSV file of X, Y, Z coordinates (hardpoints, measured or test data) and places a sketch point at each one, instead of typing coordinates in by hand.",
+            Needs = "Open a part or an assembly.",
+            Steps = new[]
+            {
+                "Optional: open a 2D or 3D sketch for editing. Otherwise a new 3D sketch is made.",
+                "Click Import Points and choose the CSV file.",
+                "Check the units. They are read from the header row when the file states them.",
+                "Click Import.",
+            },
+            Notes = new[]
+            {
+                "Each row is X, Y, Z measured from the model origin. A header row and extra columns are fine.",
+                "In a 2D sketch, points off the sketch plane are projected onto it.",
+            },
+        };
 
         public ToolGroup Group => ToolGroup.SketchPoints;
 

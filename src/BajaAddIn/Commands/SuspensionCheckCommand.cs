@@ -19,14 +19,25 @@ namespace Lbr.CadTools.AddIn.Commands
     {
         public string Title => "Suspension Check";
 
-        public string Hint => "Report camber, toe, caster, KPI, scrub radius, trail, Ackermann, and turning radius from HP_ reference points";
+        public string Hint => "Measure camber, toe, caster, KPI, scrub, trail, and Ackermann from HP_ points";
 
-        public string Usage =>
-            "1. Add reference points named HP_<point>_<corner>, for example HP_UBJ_FL.\n" +
-            "   Points: UBJ upper ball joint, LBJ lower ball joint, WC wheel center, SA any point on the spin axis inboard of WC.\n" +
-            "   Corners: FL, FR, RL, RR. A rear corner may have only WC (it locates the rear axle).\n" +
-            "2. Click Suspension Check for the report. Move or steer the assembly and click it again.\n" +
-            "Model axes and tire radius are under \"suspension\" in Settings.";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = "Measures the static suspension and steering geometry from named reference points: camber, toe, caster, kingpin inclination (KPI), scrub radius, trail, Ackermann, and turning radius.",
+            Needs = "Open a part or an assembly with HP_ reference points.",
+            Steps = new[]
+            {
+                "Add a reference point at each hardpoint and name it HP_<point>_<corner>, for example HP_UBJ_FL.",
+                "Click Suspension Check to see the report.",
+                "Move or steer the assembly and click it again to compare.",
+            },
+            Notes = new[]
+            {
+                "Points: UBJ upper ball joint, LBJ lower ball joint, WC wheel center, SA any point on the spin axis inboard of WC.",
+                "Corners: FL, FR, RL, RR. A rear corner may have only WC (it locates the rear axle).",
+                "Model axes and tire radius are set under \"suspension\" in Settings.",
+            },
+        };
 
         public ToolGroup Group => ToolGroup.VehicleDesign;
 

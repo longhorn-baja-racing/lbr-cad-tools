@@ -21,11 +21,24 @@ namespace Lbr.CadTools.AddIn.Commands
 
         public string Title => "Auto-Save";
 
-        public string Hint => "Save modified documents automatically every few minutes; click to turn it on or off and set the interval";
+        public string Hint => "Save changed documents automatically every few minutes";
 
-        public string Usage =>
-            "Saves the real files, not recovery copies, so there is no going back to the last manual save.\n" +
-            "Skips documents that were never saved or are read-only, and waits while a command, PropertyManager, or sketch is open.";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = "Saves your open, changed documents on a timer, so a crash costs minutes instead of hours.",
+            Steps = new[]
+            {
+                "Click Auto-Save.",
+                "Turn it on and choose how often it saves.",
+                "Click OK. It keeps running in the background until you turn it off.",
+            },
+            Notes = new[]
+            {
+                "It saves the real files, not recovery copies, so you cannot go back to your last manual save.",
+                "Skips documents that were never saved or are read-only.",
+                "Waits while a command, PropertyManager, or sketch is open.",
+            },
+        };
 
         public ToolGroup Group => ToolGroup.Files;
 

@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using Lbr.CadTools.AddIn.Commands;
 using Lbr.CadTools.AddIn.Features.AddInConfig;
 using Lbr.CadTools.AddIn.Features.AutoSave;
+using Lbr.CadTools.AddIn.Features.TaskPane;
 using Lbr.CadTools.Core;
 using Lbr.CadTools.AddIn.Util;
 using Microsoft.Win32;
@@ -42,6 +43,8 @@ namespace Lbr.CadTools.AddIn
         private int[] commandUserIds = new int[0];
         private AutoSaver autoSaver;
         private System.Windows.Forms.Timer startupTimer;
+        private TaskpaneView taskPaneView;
+        private ToolPane toolPane;
 
         /// <summary>Registry form of the class GUID, e.g. "{1fd92743-...}".</summary>
         internal static string Clsid => "{" + typeof(AddIn).GUID + "}";
@@ -68,7 +71,7 @@ namespace Lbr.CadTools.AddIn
             new AutoSaveCommand(() => autoSaver),
             new SettingsCommand(this),
             new AboutCommand(),
-            new GuideCommand(AllCommands),
+            new GuideCommand(() => commands, Run),
         };
 
         /// <summary>All commands minus those hidden in settings.json. Settings can never be hidden.</summary>
@@ -126,6 +129,7 @@ namespace Lbr.CadTools.AddIn
 
                 CreateCommands(settings);
                 AddCommandGroup();
+                AddTaskPane();
                 StartAutoSave(settings);
                 ScheduleAddInConfig(settings);
                 Log.Info("ConnectToSW: done");
@@ -145,6 +149,7 @@ namespace Lbr.CadTools.AddIn
             autoSaver = null;
             startupTimer?.Dispose();
             startupTimer = null;
+            RemoveTaskPane();
             try
             {
                 RemoveCommandGroup();
@@ -240,10 +245,15 @@ namespace Lbr.CadTools.AddIn
         public void OnCommand(string data)
         {
             IAddInCommand command = Lookup(data);
-            if (command == null)
+            if (command != null)
             {
-                return;
+                Run(command);
             }
+        }
+
+        /// <summary>Runs a command from a button, the task pane, or the Tool Guide.</summary>
+        private void Run(IAddInCommand command)
+        {
             try
             {
                 command.Execute(app);
@@ -263,14 +273,78 @@ namespace Lbr.CadTools.AddIn
         public int OnCommandEnable(string data)
         {
             IAddInCommand command = Lookup(data);
+            return command != null && IsEnabled(command) ? 1 : 0;
+        }
+
+        private bool IsEnabled(IAddInCommand command)
+        {
             try
             {
-                return command != null && command.IsEnabled(app) ? 1 : 0;
+                return app != null && command.IsEnabled(app);
             }
             catch (Exception)
             {
-                return 0;
+                return false;
             }
+        }
+
+        // ---- Task pane ----
+
+        /// <summary>
+        /// Adds the LBR CAD Tools task pane: the same tools as the tab, with
+        /// section headings and a description for each.
+        /// </summary>
+        private void AddTaskPane()
+        {
+            try
+            {
+                string iconDir = Path.Combine(Log.DataDirectory, "icons");
+                string[] icons = IconStrips.Create(iconDir, "pane", new Action<Graphics, Rectangle>[]
+                {
+                    (g, cell) =>
+                    {
+                        using (Bitmap icon = Brand.ProductIcon(cell.Width))
+                        {
+                            g.DrawImage(icon, cell.X, cell.Y);
+                        }
+                    },
+                });
+                taskPaneView = app.CreateTaskpaneView3(icons, Title);
+                if (taskPaneView == null)
+                {
+                    Log.Error("CreateTaskpaneView3 returned null");
+                    return;
+                }
+                GuideCommand guide = commands.OfType<GuideCommand>().FirstOrDefault()
+                                     ?? new GuideCommand(() => commands, Run);
+                toolPane = new ToolPane(commands, IsEnabled, Run, c => guide.Show(app, c));
+                toolPane.CreateControl();
+                bool shown = taskPaneView.DisplayWindowFromHandlex64(toolPane.Handle.ToInt64());
+                Log.Info($"Task pane added, DisplayWindowFromHandlex64 -> {shown}");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Task pane not added", ex);
+            }
+        }
+
+        private void RemoveTaskPane()
+        {
+            try
+            {
+                taskPaneView?.DeleteView();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Task pane DeleteView failed", ex);
+            }
+            if (taskPaneView != null)
+            {
+                Marshal.ReleaseComObject(taskPaneView);
+                taskPaneView = null;
+            }
+            toolPane?.Dispose();
+            toolPane = null;
         }
 
         private IAddInCommand Lookup(string data) =>
