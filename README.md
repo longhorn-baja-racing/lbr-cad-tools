@@ -67,6 +67,8 @@ lbr-cad-tools/
 |-- tests/                # Unit tests for BajaAddIn.Core (run in CI)
 |-- tools/SwSmokeTest/    # Drives a real SolidWorks to test the add-in's feature code (Windows only)
 |-- tools/IconGen/        # Build helper: draws the Setup icon from src/BajaAddIn/Util/Brand.cs
+|-- tools/ApiCheck/       # Release guard: fails if the add-in uses a SolidWorks API newer than 2025
+|-- samples/              # Small models to try each tool on (see samples/README.md)
 |-- scripts/              # register.ps1 / unregister.ps1 (developers), release.ps1 (build + publish)
 |-- docs/
 |   |-- PLAN.md             # Architecture, API approach, per-feature notes, open questions
