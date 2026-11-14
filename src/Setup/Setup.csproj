@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <Compile Include="..\BajaAddIn\Util\Brand.cs" Link="Brand.cs" />
+    <Compile Include="..\BajaAddIn\Util\BrandLeaf.cs" Link="BrandLeaf.cs" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
@@ -42,7 +43,7 @@
   </Target>
 
   <Target Name="MakeIcon" AfterTargets="ResolveProjectReferences" BeforeTargets="CoreCompile"
-          Inputs="..\BajaAddIn\Util\Brand.cs;$(IconGenExe)" Outputs="$(BaseIntermediateOutputPath)setup.ico">
+          Inputs="..\BajaAddIn\Util\Brand.cs;..\BajaAddIn\Util\BrandLeaf.cs;$(IconGenExe)" Outputs="$(BaseIntermediateOutputPath)setup.ico">
     <Exec Command="&quot;$(IconGenExe)&quot; &quot;$(BaseIntermediateOutputPath)setup.ico&quot;" />
   </Target>
 </Project>

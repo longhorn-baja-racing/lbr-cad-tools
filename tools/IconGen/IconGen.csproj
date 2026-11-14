@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <Compile Include="..\..\src\BajaAddIn\Util\Brand.cs" Link="Brand.cs" />
+    <Compile Include="..\..\src\BajaAddIn\Util\BrandLeaf.cs" Link="BrandLeaf.cs" />
     <Reference Include="System.Drawing" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
   </ItemGroup>
