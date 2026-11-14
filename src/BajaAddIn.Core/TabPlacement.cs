@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Lbr.CadTools.Core
 {
@@ -182,9 +183,29 @@ namespace Lbr.CadTools.Core
             return a.Cross(trial).Unit();
         }
 
-        /// <summary>File name (no extension) for a tab part: "Tab-LapBelt-1", the first number not taken.</summary>
-        public static string FileName(TabUse use, Func<string, bool> taken)
+        /// <summary>
+        /// File name (no extension) for a tab part inserted into an assembly.
+        /// When the assembly follows the team convention, the tab takes its team
+        /// and REV and the next free number: ERG_0006_SeatTab_REV01_V01.
+        /// Otherwise "Tab-Seat-1". Either way, the first name not taken.
+        /// </summary>
+        /// <param name="assemblyName">Assembly file name without extension.</param>
+        /// <param name="knownNames">SolidWorks file names in use (assembly and folder), for the next number.</param>
+        /// <param name="taken">True when a part with that name already exists.</param>
+        public static string FileName(TabUse use, string assemblyName, IEnumerable<string> knownNames, Func<string, bool> taken)
         {
+            CadName assembly = NamingConvention.Parse(assemblyName);
+            if (assembly != null)
+            {
+                for (int n = NamingConvention.NextNumber(assembly.Team, knownNames); n <= 9999; n++)
+                {
+                    string name = NamingConvention.Format(CadFileKind.Part, assembly.Team, n, PartName(use), assembly.Revision ?? 1, 1);
+                    if (!taken(name))
+                    {
+                        return name;
+                    }
+                }
+            }
             for (int i = 1; ; i++)
             {
                 string name = $"Tab-{use}-{i}";
@@ -192,6 +213,20 @@ namespace Lbr.CadTools.Core
                 {
                     return name;
                 }
+            }
+        }
+
+        /// <summary>The PartName field for a tab: two or three words, CamelCase.</summary>
+        public static string PartName(TabUse use)
+        {
+            switch (use)
+            {
+                case TabUse.LapBelt: return "LapBeltTab";
+                case TabUse.AntiSubBelt: return "AntiSubTab";
+                case TabUse.Seat: return "SeatTab";
+                case TabUse.FireExtinguisher: return "ExtinguisherTab";
+                case TabUse.FuelTank: return "FuelTankTab";
+                default: return "MountingTab";
             }
         }
     }

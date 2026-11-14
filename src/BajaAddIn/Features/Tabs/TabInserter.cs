@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using Lbr.CadTools.AddIn.Features.Naming;
 using Lbr.CadTools.Core;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
@@ -81,7 +82,10 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
         public static IComponent2 Insert(ISldWorks app, IModelDoc2 assembly, IModelDoc2 tab, TabUse use, TabFrame frame)
         {
             string folder = Path.GetDirectoryName(assembly.GetPathName());
-            string name = TabPlacement.FileName(use, n => File.Exists(Path.Combine(folder, n + ".SLDPRT")));
+            // Team convention names when the assembly follows it; numbers come from the assembly and its folder.
+            NameScanner.Result names = NameScanner.Scan(assembly);
+            string name = TabPlacement.FileName(use, names.Top.BaseName, names.AllNames,
+                n => File.Exists(Path.Combine(folder, n + ".SLDPRT")));
             string path = Path.Combine(folder, name + ".SLDPRT");
 
             int errors = 0, warnings = 0;

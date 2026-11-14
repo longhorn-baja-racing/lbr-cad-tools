@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Lbr.CadTools.Core;
 using Xunit;
 
@@ -105,7 +106,18 @@ namespace Lbr.CadTools.Core.Tests
         [Fact]
         public void File_name_takes_the_first_free_number()
         {
-            Assert.Equal("Tab-Seat-3", TabPlacement.FileName(TabUse.Seat, n => n == "Tab-Seat-1" || n == "Tab-Seat-2"));
+            Assert.Equal("Tab-Seat-3", TabPlacement.FileName(TabUse.Seat, "Pedal Box", new string[0], n => n == "Tab-Seat-1" || n == "Tab-Seat-2"));
+        }
+
+        [Fact]
+        public void File_name_follows_the_team_convention_of_the_assembly()
+        {
+            string[] known = { "aERG_0001_PedalBox_REV02_V03", "ERG_0004_Pedal_REV02_V01", "CHA_0050_Frame_REV02_V01" };
+            Assert.Equal("ERG_0005_SeatTab_REV02_V01", TabPlacement.FileName(TabUse.Seat, "aERG_0001_PedalBox_REV02_V03", known, n => false));
+            // A file already on disk with that name moves to the next number.
+            Assert.Equal("ERG_0006_LapBeltTab_REV02_V01",
+                TabPlacement.FileName(TabUse.LapBelt, "aERG_0001_PedalBox_REV02_V03", known, n => n == "ERG_0005_LapBeltTab_REV02_V01"));
+            Assert.True(NamingConvention.CheckOne(new NamedFile("ERG_0005_SeatTab_REV02_V01", CadFileKind.Part), NamingConvention.DefaultTeams.Keys.ToList()).Ok);
         }
 
         [Fact]

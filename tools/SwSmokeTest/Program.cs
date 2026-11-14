@@ -789,6 +789,22 @@ namespace Lbr.CadTools.SmokeTest
                 Check(Maps(app, tab, new Vec3(0, seat.Length, seat.Thickness / 2), new Vec3(pick.X, pick.Y, pick.Z + seat.Length)), "tab stands on the top face, hole straight up");
             }
             asm.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errs, ref errs);
+
+            Step("Tab insert: convention-named assembly names the tab the same way");
+            string pedalDir = Path.Combine(dir, "PedalBox");
+            Directory.CreateDirectory(pedalDir);
+            IModelDoc2 pedal = NewAssembly(app);
+            AddComponent(pedal, tubePath, 0);
+            Save(pedal, Path.Combine(pedalDir, "aERG_0001_PedalBox_REV02_V03.SLDASM"));
+            File.WriteAllText(Path.Combine(pedalDir, "ERG_0007_Pedal_REV02_V01.SLDPRT"), ""); // a number already in use
+            m = PickFace(app, pedal, 0, r, 0.1); // top of the tube (axis along Z here)
+            if (m != null)
+            {
+                tab = InsertTab(app, pedal, seat, m, TabOrientation.AlongTube);
+                string tabName = Path.GetFileNameWithoutExtension(tab.GetPathName());
+                Console.WriteLine($"  tab file: {tabName}");
+                Check(tabName == "ERG_0008_SeatTab_REV02_V01", "tab named ERG_0008_SeatTab_REV02_V01 (team and REV of the assembly, next free number)");
+            }
         }
 
         private static IComponent2 InsertTab(ISldWorks app, IModelDoc2 asm, TabInputs t, TabMount m, TabOrientation o)
