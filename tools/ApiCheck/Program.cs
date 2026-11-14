@@ -120,6 +120,7 @@ namespace Lbr.CadTools.ApiCheck
 
             var page = new Regex(@"~SolidWorks\.Interop\.\w+\.(\w+)~(\w+)$");
             var availability = new Regex(@"Availability\s.{0,160}?Revision\s+Number\s+(\d+)", RegexOptions.Singleline);
+            var oldAvailability = new Regex(@"Availability\s+SOLIDWORKS\s+(\d{2,4})", RegexOptions.IgnoreCase);
             var added = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             unreadable.Clear();
             foreach (string file in Directory.EnumerateFiles(html, "*.htm*", SearchOption.AllDirectories))
@@ -131,13 +132,27 @@ namespace Lbr.CadTools.ApiCheck
                 }
                 // Some pages write "Revision&nbsp;Number&nbsp;14"; decode entities before matching.
                 string text = WebUtility.HtmlDecode(Regex.Replace(File.ReadAllText(file), "<[^>]*>", " ")).Replace('\u00A0', ' ');
+                string key = m.Groups[1].Value + "." + m.Groups[2].Value;
                 Match a = availability.Match(text);
-                if (!a.Success && Regex.IsMatch(text, @"\bAvailability\b"))
+                if (a.Success)
                 {
-                    unreadable.Add(m.Groups[1].Value + "." + m.Groups[2].Value);
+                    added[key] = int.Parse(a.Groups[1].Value);
+                    continue;
+                }
+                // Pages from before revision numbers: "Availability SOLIDWORKS 99, datecode 1999207".
+                Match old = oldAvailability.Match(text);
+                if (old.Success)
+                {
+                    int year = int.Parse(old.Groups[1].Value);
+                    added[key] = (year < 100 ? 1900 + year : year) - YearOffset;
+                    continue;
+                }
+                if (Regex.IsMatch(text, @"\bAvailability\b"))
+                {
+                    unreadable.Add(key);
                 }
                 // Pages without an Availability line describe the original API, older than any supported release.
-                added[m.Groups[1].Value + "." + m.Groups[2].Value] = a.Success ? int.Parse(a.Groups[1].Value) : 0;
+                added[key] = 0;
             }
             return added;
         }
