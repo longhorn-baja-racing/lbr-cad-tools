@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Release-time guard: fails when the add-in calls a SolidWorks API member
+    newer than the oldest SolidWorks the team runs (issue #14). Windows only
+    (reads the local SolidWorks API help); run by scripts/release.ps1.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Lbr.CadTools.ApiCheck</RootNamespace>
+  </PropertyGroup>
+</Project>

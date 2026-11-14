@@ -7,7 +7,9 @@
          and that the tag v<version> does not exist yet (version comes from
          Directory.Build.props; bump it in a PR first).
       2. Clean Release build of src/Setup (which embeds the add-in and the
-         SolidWorks interop assemblies it was built against).
+         SolidWorks interop assemblies it was built against), then
+         tools/ApiCheck: fails if the add-in calls any SolidWorks API newer
+         than SolidWorks 2025, the oldest version the team runs (issue #14).
       3. Writes release notes: install steps, then the commits since the last
          tag (or -NotesFile for a hand-written summary).
       4. Tags v<version>, pushes the tag, and creates the GitHub Release with
@@ -53,6 +55,9 @@ function Run([string]$exe, [string[]]$arguments) {
     return $out
 }
 
+# Oldest SolidWorks the team runs (issue #14). Keep in sync with Installer.MinimumYear.
+$MinSolidWorks = 2025
+
 $git = Find-Tool 'git' "$env:ProgramFiles\Git\cmd\git.exe"
 $gh = Find-Tool 'gh' "$env:ProgramFiles\GitHub CLI\gh.exe"
 $dotnet = Find-Tool 'dotnet' $null
@@ -89,6 +94,11 @@ try {
     if (-not $fileVersion.StartsWith($version)) { throw "Built exe has version $fileVersion, expected $version." }
     Write-Host "  $exe ($([math]::Round((Get-Item $exe).Length / 1MB, 1)) MB)"
 
+    Write-Host "Checking SolidWorks API use against SolidWorks $MinSolidWorks..."
+    $addInDll = Join-Path $root 'src\BajaAddIn\bin\Release\net48\BajaAddIn.dll'
+    Run $dotnet @('run', '--project', (Join-Path $root 'tools\ApiCheck\ApiCheck.csproj'), '-c', 'Release', '--', '--max-year', "$MinSolidWorks", $addInDll) |
+        ForEach-Object { Write-Host "  $_" }
+
     # ---- 3. Notes ----
     $previous = $null
     try { $previous = (Run $git @('describe', '--tags', '--abbrev=0')) -join '' } catch { }
@@ -111,7 +121,7 @@ try {
         foreach ($line in Run $git @('log', '--no-merges', '--format=- %s', "$previous..HEAD")) { $notes.Add($line) }
         $notes.Add('')
     }
-    $notes.Add("Built for SolidWorks 2026 interop; most tools should also work on older versions. Commit $((Run $git @('rev-parse', '--short', 'HEAD')) -join '').")
+    $notes.Add("Requires SolidWorks $MinSolidWorks or newer. Commit $((Run $git @('rev-parse', '--short', 'HEAD')) -join '').")
     $notesPath = Join-Path $dist "release-notes-$version.md"
     $text = ($notes -join "`n") + "`n"
     if ($text -match '[^\x09\x0A\x0D\x20-\x7E]') { throw 'Release notes contain non-ASCII characters.' }

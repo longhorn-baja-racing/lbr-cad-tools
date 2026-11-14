@@ -175,26 +175,11 @@ namespace Lbr.CadTools.Setup
             }
         }
 
-        /// <summary>SolidWorks year of the embedded interop assemblies (major 34 = 2026).</summary>
-        public static int BuiltForYear()
-        {
-            using (Stream s = Assembly.GetExecutingAssembly().GetManifestResourceStream(PayloadPrefix + "SolidWorks.Interop.sldworks.dll"))
-            {
-                string temp = Path.GetTempFileName();
-                try
-                {
-                    using (FileStream f = File.Create(temp))
-                    {
-                        s.CopyTo(f);
-                    }
-                    return 1992 + AssemblyName.GetAssemblyName(temp).Version.Major;
-                }
-                finally
-                {
-                    File.Delete(temp);
-                }
-            }
-        }
+        /// <summary>
+        /// Oldest SolidWorks the add-in supports (issue #14). Release builds run
+        /// tools/ApiCheck so no newer API sneaks in. Keep in sync with scripts/release.ps1.
+        /// </summary>
+        public const int MinimumYear = 2025;
 
         private static RegistryKey LocalMachine() => RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
 
