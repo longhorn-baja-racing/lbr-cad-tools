@@ -7,6 +7,7 @@ using System.Runtime.InteropServices;
 using Lbr.CadTools.AddIn.Features.AddInConfig;
 using Lbr.CadTools.AddIn.Features.AutoSave;
 using Lbr.CadTools.AddIn.Features.BatchExport;
+using Lbr.CadTools.AddIn.Features.Drawings;
 using Lbr.CadTools.AddIn.Features.FixComponents;
 using Lbr.CadTools.AddIn.Features.Naming;
 using Lbr.CadTools.AddIn.Features.Notcher;
@@ -145,6 +146,7 @@ namespace Lbr.CadTools.SmokeTest
                     Run("suspension", () => SuspensionTest(app, dir));
                     Run("naming", () => NameCheckTest(app, dir));
                     Run("notcher", () => NotcherTest(app, dir));
+                    Run("drawings", () => DrawingsTest(app, dir));
                 }
                 finally
                 {
@@ -988,6 +990,92 @@ namespace Lbr.CadTools.SmokeTest
             }
             doc.ClearSelection2(true);
             return f;
+        }
+
+        // ---- Auto drawings (issue #13) ----
+
+        private static void DrawingsTest(ISldWorks app, string dir)
+        {
+            string folder = Path.Combine(dir, "Drawings");
+            Directory.CreateDirectory(folder);
+
+            Step("Drawings: one part, then an assembly and its parts");
+            string bracket = CreateBoxPart(app, folder, "CHA_0002_SeatBracket_REV01_V01", 0.06);
+            string plate = CreateBoxPart(app, folder, "CHA_0003_BasePlate_REV01_V01", 0.40);
+            IModelDoc2 asm = NewAssembly(app);
+            AddComponent(asm, bracket, 0);
+            AddComponent(asm, plate, 0.1);
+            string asmPath = Save(asm, Path.Combine(folder, "aCHA_0001_Seat_REV01_V01.SLDASM"));
+
+            var options = new DrawingMaker.Options { ImportDimensions = true };
+            DrawingMaker.Result r = DrawingMaker.Make(app, new[] { bracket }, options, keepLastOpen: false);
+            r.Failed.ForEach(f => Console.WriteLine("  failed: " + f));
+            string bracketDrawing = Path.Combine(folder, "dCHA_0002_SeatBracket_REV01_V01.SLDDRW");
+            Check(r.Made.Count == 1 && File.Exists(bracketDrawing), "dCHA_0002_SeatBracket_REV01_V01.SLDDRW made");
+            CheckDrawing(app, bracketDrawing, "CHA_0002", "Seat Bracket", s => s == 1); // 60 mm part plus its iso fits a letter sheet at 1:1
+
+            int errs = 0;
+            app.ActivateDoc3(asm.GetTitle(), false, 0, ref errs);
+            List<string> parts = DrawingMaker.PartsOf(asm, out int skipped);
+            Check(parts.Count == 2 && skipped == 0, $"assembly uses 2 parts to draw (got {parts.Count}, skipped {skipped})");
+            var all = new List<string> { asmPath };
+            all.AddRange(parts);
+            r = DrawingMaker.Make(app, all, options, keepLastOpen: false);
+            r.Failed.ForEach(f => Console.WriteLine("  failed: " + f));
+            Check(r.Made.Count == 2 && r.Existing.SequenceEqual(new[] { "dCHA_0002_SeatBracket_REV01_V01.SLDDRW" }),
+                $"assembly and plate drawn, existing bracket drawing kept (made {r.Made.Count}, existing {r.Existing.Count})");
+            CheckDrawing(app, Path.Combine(folder, "dCHA_0001_Seat_REV01_V01.SLDDRW"), "CHA_0001", "Seat", s => s < 1);
+
+            r = DrawingMaker.Make(app, new[] { bracket }, new DrawingMaker.Options { Replace = true }, keepLastOpen: false);
+            Check(r.Made.Count == 1 && r.Failed.Count == 0, "Replace remakes an existing drawing");
+        }
+
+        private static void CheckDrawing(ISldWorks app, string path, string partNo, string description, Func<double, bool> scaleOk)
+        {
+            int errors = 0, warnings = 0;
+            var doc = app.OpenDoc6(path, (int)swDocumentTypes_e.swDocDRAWING, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref errors, ref warnings);
+            if (doc == null)
+            {
+                Fail($"could not open {path} (error {errors})");
+                return;
+            }
+            var drawing = (IDrawingDoc)doc;
+            var sheet = (ISheet)drawing.GetCurrentSheet();
+            var props = (double[])sheet.GetProperties2();
+            double w = 0, h = 0;
+            sheet.GetSize(ref w, ref h);
+            var views = new List<IView>();
+            for (var v = (IView)((IView)drawing.GetFirstView()).GetNextView(); v != null; v = (IView)v.GetNextView())
+            {
+                views.Add(v);
+            }
+            Console.WriteLine($"  {Path.GetFileName(path)}: sheet {w * 1000:F0} x {h * 1000:F0} mm, scale {props[2]}:{props[3]}, " +
+                              $"views {string.Join(", ", views.Select(v => v.GetOrientationName()))}");
+            Check(views.Count == 4, "four views");
+            Check(views.Select(v => v.GetOrientationName()).OrderBy(n => n).SequenceEqual(new[] { "*Front", "*Isometric", "*Right", "*Top" }),
+                "front, top, right, isometric");
+            Check(scaleOk(props[2] / props[3]), "scale suits the model size");
+            bool onSheet = views.All(v =>
+            {
+                var o = (double[])v.GetOutline();
+                bool inside = o[0] >= -1e-6 && o[1] >= -1e-6 && o[2] <= w + 1e-6 && o[3] <= h + 1e-6;
+                if (!inside)
+                {
+                    Console.WriteLine($"  {v.GetOrientationName()} outline {o[0] * 1000:F0},{o[1] * 1000:F0} .. {o[2] * 1000:F0},{o[3] * 1000:F0} mm");
+                }
+                return inside;
+            });
+            Check(onSheet, "every view inside the sheet");
+            doc.Extension.get_CustomPropertyManager("").Get6("PartNo", false, out _, out string no, out _, out _);
+            doc.Extension.get_CustomPropertyManager("").Get6("Description", false, out _, out string desc, out _, out _);
+            Check(no == partNo && desc == description, $"title properties {no} / {desc}");
+
+            // A PDF next to the drawing, to look at the layout (kept with --keep).
+            string pdf = Path.ChangeExtension(path, ".pdf");
+            doc.Extension.SaveAs3(pdf, (int)swSaveAsVersion_e.swSaveAsCurrentVersion, (int)swSaveAsOptions_e.swSaveAsOptions_Silent,
+                null, null, ref errors, ref warnings);
+            Check(File.Exists(pdf), "PDF of the drawing written");
+            app.CloseDoc(path);
         }
 
         // ---- Add-in config (issue #9) ----
