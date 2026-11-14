@@ -190,6 +190,9 @@ namespace Lbr.CadTools.Core
 
         public Vec3 ContactPatch { get; set; }
 
+        /// <summary>Wheel center in vehicle coordinates.</summary>
+        public Vec3 WheelCenter { get; set; }
+
         /// <summary>Where the steering axis meets the ground plane.</summary>
         public Vec3 SteerAxisAtGround { get; set; }
 
@@ -228,7 +231,7 @@ namespace Lbr.CadTools.Core
                 throw new ArgumentException("The upper ball joint must be above the lower one.");
             }
 
-            var g = new CornerGeometry { Corner = p.Corner, Side = side, SpinAxis = spin };
+            var g = new CornerGeometry { Corner = p.Corner, Side = side, SpinAxis = spin, WheelCenter = p.WheelCenter };
             double horizontal = Math.Sqrt(spin.X * spin.X + spin.Y * spin.Y);
             g.Camber = -Math.Atan2(spin.Z, horizontal) * Deg;
             g.Toe = Math.Atan2(spin.X, Math.Abs(spin.Y)) * Deg;
