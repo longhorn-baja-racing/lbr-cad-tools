@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using Lbr.CadTools.AddIn.Commands;
 using Lbr.CadTools.AddIn.Features.AddInConfig;
 using Lbr.CadTools.AddIn.Features.AutoSave;
+using Lbr.CadTools.AddIn.Features.TaskPane;
 using Lbr.CadTools.Core;
 using Lbr.CadTools.AddIn.Util;
 using Microsoft.Win32;
@@ -41,6 +43,8 @@ namespace Lbr.CadTools.AddIn
         private int[] commandUserIds = new int[0];
         private AutoSaver autoSaver;
         private System.Windows.Forms.Timer startupTimer;
+        private TaskpaneView taskPaneView;
+        private ToolPane toolPane;
 
         /// <summary>Registry form of the class GUID, e.g. "{1fd92743-...}".</summary>
         internal static string Clsid => "{" + typeof(AddIn).GUID + "}";
@@ -50,8 +54,9 @@ namespace Lbr.CadTools.AddIn
 
         internal AutoSaver AutoSaver => autoSaver;
 
-        // List order is button order, and each command's index here is its
-        // stable user ID. Changing the shown list rebuilds the command group on
+        // Each command's index here is its stable user ID: append new commands,
+        // do not reorder. Buttons are shown by section (ToolGroups.Order), then
+        // in this order. Changing the shown list rebuilds the command group on
         // the next load (see AddCommandGroup).
         internal List<IAddInCommand> AllCommands() => new List<IAddInCommand>
         {
@@ -66,26 +71,27 @@ namespace Lbr.CadTools.AddIn
             new AutoSaveCommand(() => autoSaver),
             new SettingsCommand(this),
             new AboutCommand(),
+            new GuideCommand(() => commands, Run),
         };
 
         /// <summary>All commands minus those hidden in settings.json. Settings can never be hidden.</summary>
         private void CreateCommands(AddInSettings settings)
         {
             List<IAddInCommand> all = AllCommands();
-            var shown = new List<IAddInCommand>();
-            var ids = new List<int>();
+            var shown = new List<(IAddInCommand Command, int Id)>();
             for (int i = 0; i < all.Count; i++)
             {
                 bool hidden = !(all[i] is SettingsCommand)
                               && settings.HiddenCommands.Contains(all[i].Title, StringComparer.OrdinalIgnoreCase);
                 if (!hidden)
                 {
-                    shown.Add(all[i]);
-                    ids.Add(i);
+                    shown.Add((all[i], i));
                 }
             }
-            commands = shown;
-            commandUserIds = ids.ToArray();
+            // OrderBy is stable, so commands keep their list order inside a section.
+            shown = shown.OrderBy(c => ToolGroups.Order.ToList().IndexOf(c.Command.Group)).ToList();
+            commands = shown.Select(c => c.Command).ToList();
+            commandUserIds = shown.Select(c => c.Id).ToArray();
             Log.Info($"Commands shown: {commands.Count} of {all.Count}");
         }
 
@@ -123,6 +129,7 @@ namespace Lbr.CadTools.AddIn
 
                 CreateCommands(settings);
                 AddCommandGroup();
+                AddTaskPane();
                 StartAutoSave(settings);
                 ScheduleAddInConfig(settings);
                 Log.Info("ConnectToSW: done");
@@ -142,6 +149,7 @@ namespace Lbr.CadTools.AddIn
             autoSaver = null;
             startupTimer?.Dispose();
             startupTimer = null;
+            RemoveTaskPane();
             try
             {
                 RemoveCommandGroup();
@@ -237,10 +245,15 @@ namespace Lbr.CadTools.AddIn
         public void OnCommand(string data)
         {
             IAddInCommand command = Lookup(data);
-            if (command == null)
+            if (command != null)
             {
-                return;
+                Run(command);
             }
+        }
+
+        /// <summary>Runs a command from a button, the task pane, or the Tool Guide.</summary>
+        private void Run(IAddInCommand command)
+        {
             try
             {
                 command.Execute(app);
@@ -260,14 +273,78 @@ namespace Lbr.CadTools.AddIn
         public int OnCommandEnable(string data)
         {
             IAddInCommand command = Lookup(data);
+            return command != null && IsEnabled(command) ? 1 : 0;
+        }
+
+        private bool IsEnabled(IAddInCommand command)
+        {
             try
             {
-                return command != null && command.IsEnabled(app) ? 1 : 0;
+                return app != null && command.IsEnabled(app);
             }
             catch (Exception)
             {
-                return 0;
+                return false;
             }
+        }
+
+        // ---- Task pane ----
+
+        /// <summary>
+        /// Adds the LBR CAD Tools task pane: the same tools as the tab, with
+        /// section headings and a description for each.
+        /// </summary>
+        private void AddTaskPane()
+        {
+            try
+            {
+                string iconDir = Path.Combine(Log.DataDirectory, "icons");
+                string[] icons = IconStrips.Create(iconDir, "pane", new Action<Graphics, Rectangle>[]
+                {
+                    (g, cell) =>
+                    {
+                        using (Bitmap icon = Brand.ProductIcon(cell.Width))
+                        {
+                            g.DrawImage(icon, cell.X, cell.Y);
+                        }
+                    },
+                });
+                taskPaneView = app.CreateTaskpaneView3(icons, Title);
+                if (taskPaneView == null)
+                {
+                    Log.Error("CreateTaskpaneView3 returned null");
+                    return;
+                }
+                GuideCommand guide = commands.OfType<GuideCommand>().FirstOrDefault()
+                                     ?? new GuideCommand(() => commands, Run);
+                toolPane = new ToolPane(commands, IsEnabled, Run, c => guide.Show(app, c));
+                toolPane.CreateControl();
+                bool shown = taskPaneView.DisplayWindowFromHandlex64(toolPane.Handle.ToInt64());
+                Log.Info($"Task pane added, DisplayWindowFromHandlex64 -> {shown}");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Task pane not added", ex);
+            }
+        }
+
+        private void RemoveTaskPane()
+        {
+            try
+            {
+                taskPaneView?.DeleteView();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Task pane DeleteView failed", ex);
+            }
+            if (taskPaneView != null)
+            {
+                Marshal.ReleaseComObject(taskPaneView);
+                taskPaneView = null;
+            }
+            toolPane?.Dispose();
+            toolPane = null;
         }
 
         private IAddInCommand Lookup(string data) =>
@@ -303,8 +380,19 @@ namespace Lbr.CadTools.AddIn
 
             // Toolbar buttons (and so tab buttons) need icons.
             string iconDir = Path.Combine(Log.DataDirectory, "icons");
-            group.IconList = IconStrips.Create(iconDir, "commands", commands.Select(c => c.IconText).ToList());
-            group.MainIconList = IconStrips.Create(iconDir, "main", new[] { "LBR" });
+            group.IconList = IconStrips.Create(iconDir, "commands", commands
+                .Select(c => (Action<Graphics, Rectangle>)((g, cell) => ToolIcons.Draw(g, cell, c.Icon, ToolGroups.Color(c.Group))))
+                .ToList());
+            group.MainIconList = IconStrips.Create(iconDir, "main", new Action<Graphics, Rectangle>[]
+            {
+                (g, cell) =>
+                {
+                    using (Bitmap icon = Brand.ProductIcon(cell.Width))
+                    {
+                        g.DrawImage(icon, cell.X, cell.Y);
+                    }
+                },
+            });
             Log.Info($"Icons written to {iconDir}");
 
             var itemType = (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem);
@@ -312,6 +400,10 @@ namespace Lbr.CadTools.AddIn
             for (int i = 0; i < commands.Count; i++)
             {
                 IAddInCommand c = commands[i];
+                if (i > 0 && commands[i - 1].Group != c.Group)
+                {
+                    group.AddSpacer2(-1, itemType); // separator between sections in the menu and toolbar
+                }
                 itemIndexes[i] = group.AddCommandItem2(
                     c.Title, -1, c.Hint, c.Title, i,
                     $"{nameof(OnCommand)}({i})", $"{nameof(OnCommandEnable)}({i})",
@@ -333,27 +425,35 @@ namespace Lbr.CadTools.AddIn
                     Log.Info($"{docType}: removed old tab -> {removed}");
                 }
 
-                int[] ids = Enumerable.Range(0, commands.Count)
-                    .Where(i => commands[i].DocumentTypes.Contains(docType))
-                    .Select(i => group.get_CommandID(itemIndexes[i]))
-                    .ToArray();
-                if (ids.Length == 0)
+                if (!commands.Any(c => c.DocumentTypes.Contains(docType)))
                 {
                     continue;
                 }
-
                 CommandTab tab = commandManager.AddCommandTab((int)docType, Title);
                 if (tab == null)
                 {
                     Log.Error($"{docType}: AddCommandTab returned null");
                     continue;
                 }
-                CommandTabBox box = tab.AddCommandTabBox();
-                int[] textTypes = Enumerable
-                    .Repeat((int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow, ids.Length)
-                    .ToArray();
-                bool added = box.AddCommands(ids, textTypes);
-                Log.Info($"{docType}: tab created, command IDs [{string.Join(", ", ids)}], AddCommands -> {added}");
+
+                // One box per section; SolidWorks draws a divider between boxes.
+                foreach (ToolGroup section in ToolGroups.Order)
+                {
+                    int[] ids = Enumerable.Range(0, commands.Count)
+                        .Where(i => commands[i].Group == section && commands[i].DocumentTypes.Contains(docType))
+                        .Select(i => group.get_CommandID(itemIndexes[i]))
+                        .ToArray();
+                    if (ids.Length == 0)
+                    {
+                        continue;
+                    }
+                    var display = ToolGroups.SmallButtons(section)
+                        ? swCommandTabButtonTextDisplay_e.swCommandTabButton_TextHorizontal
+                        : swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
+                    CommandTabBox box = tab.AddCommandTabBox();
+                    bool added = box.AddCommands(ids, Enumerable.Repeat((int)display, ids.Length).ToArray());
+                    Log.Info($"{docType}: {ToolGroups.Name(section)} box, command IDs [{string.Join(", ", ids)}], AddCommands -> {added}");
+                }
             }
         }
 

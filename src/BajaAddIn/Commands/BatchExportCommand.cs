@@ -18,9 +18,30 @@ namespace Lbr.CadTools.AddIn.Commands
     {
         public string Title => "Batch Export";
 
-        public string Hint => "Export this document (and its components and drawings) to STEP, IGES, Parasolid, STL, PDF, or DXF";
+        public string Hint => "Export this document and its parts to STEP, STL, PDF, DXF, and more in one go";
 
-        public string IconText => "BX";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = "Saves copies of the open document, and optionally every part in it and their drawings, in the formats you tick: STEP, IGES, Parasolid, STL, PDF, or DXF. Use it to send files to a vendor, a 3D printer, or a teammate without SolidWorks.",
+            Needs = "Open a saved part, assembly, or drawing.",
+            Steps = new[]
+            {
+                "Save the document.",
+                "Click Batch Export.",
+                "Choose what to include: every unique component, Toolbox parts, and drawings with the same name.",
+                "Tick the formats and pick the output folder (default: an Exports folder next to the file).",
+                "Click Export.",
+            },
+            Notes = new[]
+            {
+                "Files are named by part number.",
+                "Files with the same name in the output folder are replaced.",
+            },
+        };
+
+        public ToolGroup Group => ToolGroup.Files;
+
+        public ToolIcon Icon => ToolIcon.BatchExport;
 
         public IReadOnlyCollection<swDocumentTypes_e> DocumentTypes { get; } = new[]
         {

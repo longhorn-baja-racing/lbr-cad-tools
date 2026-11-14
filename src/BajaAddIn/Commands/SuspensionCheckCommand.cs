@@ -19,9 +19,29 @@ namespace Lbr.CadTools.AddIn.Commands
     {
         public string Title => "Suspension Check";
 
-        public string Hint => "Camber, toe, caster, KPI, scrub, trail, Ackermann, and turning radius from HP_ reference points";
+        public string Hint => "Measure camber, toe, caster, KPI, scrub, trail, and Ackermann from HP_ points";
 
-        public string IconText => "SU";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = "Measures the static suspension and steering geometry from named reference points: camber, toe, caster, kingpin inclination (KPI), scrub radius, trail, Ackermann, and turning radius.",
+            Needs = "Open a part or an assembly with HP_ reference points.",
+            Steps = new[]
+            {
+                "Add a reference point at each hardpoint and name it HP_<point>_<corner>, for example HP_UBJ_FL.",
+                "Click Suspension Check to see the report.",
+                "Move or steer the assembly and click it again to compare.",
+            },
+            Notes = new[]
+            {
+                "Points: UBJ upper ball joint, LBJ lower ball joint, WC wheel center, SA any point on the spin axis inboard of WC.",
+                "Corners: FL, FR, RL, RR. A rear corner may have only WC (it locates the rear axle).",
+                "Model axes and tire radius are set under \"suspension\" in Settings.",
+            },
+        };
+
+        public ToolGroup Group => ToolGroup.VehicleDesign;
+
+        public ToolIcon Icon => ToolIcon.SuspensionCheck;
 
         public IReadOnlyCollection<swDocumentTypes_e> DocumentTypes { get; } = new[]
         {

@@ -15,9 +15,27 @@ namespace Lbr.CadTools.AddIn.Commands
     {
         public string Title => "Restore Fix States";
 
-        public string Hint => "Undo the last Fix All or Float All in the active assembly";
+        public string Hint => "Undo the last Fix All or Float All in this assembly";
 
-        public string IconText => "RS";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = "Puts each component back to the fixed or floating state it had before the last Fix All or Float All. SolidWorks' own Undo (Ctrl+Z) cannot undo those two.",
+            Needs = "Run Fix All or Float All in this assembly first.",
+            Steps = new[]
+            {
+                "Open the assembly where you ran Fix All or Float All.",
+                "Click Restore Fix States.",
+            },
+            Notes = new[]
+            {
+                "Each component gets its own earlier state back, so a mix of fixed and floating parts is restored exactly.",
+                "The earlier states are remembered until SolidWorks is closed.",
+            },
+        };
+
+        public ToolGroup Group => ToolGroup.Assembly;
+
+        public ToolIcon Icon => ToolIcon.RestoreFixStates;
 
         public IReadOnlyCollection<swDocumentTypes_e> DocumentTypes { get; } = new[]
         {

@@ -2,15 +2,17 @@ using System;
 using System.Drawing;
 using System.IO;
 using System.Windows.Forms;
+using Lbr.CadTools.AddIn.Commands;
+using Lbr.CadTools.AddIn.Util;
 using Lbr.CadTools.Core;
 
 namespace Lbr.CadTools.AddIn.Features.SketchPoints
 {
     /// <summary>
-    /// Asks for a CSV file and its units. Built in code (no designer files).
+    /// Asks for a CSV file and its units.
     /// For import, picking a file whose header names a unit selects that unit.
     /// </summary>
-    internal sealed class PointFileDialog : Form
+    internal sealed class PointFileDialog : ToolForm
     {
         private static readonly LengthUnit[] UnitChoices = { LengthUnit.Millimeter, LengthUnit.Inch, LengthUnit.Meter };
         private static readonly string[] UnitNames = { "Millimeters (mm)", "Inches (in)", "Meters (m)" };
@@ -22,77 +24,57 @@ namespace Lbr.CadTools.AddIn.Features.SketchPoints
         private readonly bool import;
         private readonly TextBox pathBox = new TextBox();
         private readonly ComboBox unitBox = new ComboBox();
-        private readonly Label unitNote = new Label();
-        private readonly Button okButton = new Button();
+        private readonly Label unitNote;
 
         public PointFileDialog(bool import, string targetDescription, string suggestedFileName = null)
+            : base(import ? "Import Points" : "Export Points",
+                import
+                    ? "Reads X, Y, Z rows from a CSV file and adds each row as a sketch point."
+                    : "Writes the points of a sketch to a CSV file, one X, Y, Z row per point.",
+                import ? ToolIcon.ImportPoints : ToolIcon.ExportPoints, ToolGroup.SketchPoints, 480)
         {
             this.import = import;
-            Text = import ? "Import Points from CSV" : "Export Sketch Points to CSV";
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            ShowInTaskbar = false;
-            StartPosition = FormStartPosition.CenterParent;
-            AutoScaleMode = AutoScaleMode.Dpi;
-            Font = SystemFonts.MessageBoxFont;
+            SuspendLayout();
 
-            var layout = new TableLayoutPanel
-            {
-                ColumnCount = 3,
-                Dock = DockStyle.Fill,
-                Padding = new Padding(10),
-                AutoSize = true,
-            };
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 320));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            Label target = Note(targetDescription, ContentWidth);
+            target.ForeColor = Brand.Ink;
+            AddSection(import ? "Where the points go" : "What gets exported", null, target);
 
-            var target = new Label { Text = targetDescription, AutoSize = true, MaximumSize = new Size(480, 0), Margin = new Padding(3, 3, 3, 10) };
-            layout.Controls.Add(target, 0, 0);
-            layout.SetColumnSpan(target, 3);
-
-            layout.Controls.Add(new Label { Text = "File:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 1);
-            pathBox.Dock = DockStyle.Fill;
+            pathBox.Width = ContentWidth - 100;
+            pathBox.Margin = new Padding(0, 1, 6, 0);
             pathBox.TextChanged += (s, e) => OnPathChanged();
-            layout.Controls.Add(pathBox, 1, 1);
-            var browse = new Button { Text = "Browse...", AutoSize = true };
+            var browse = new Button { Text = "Browse...", AutoSize = true, Margin = Padding.Empty };
             browse.Click += (s, e) => Browse();
-            layout.Controls.Add(browse, 2, 1);
+            AddSection("CSV file",
+                import
+                    ? "Comma separated X, Y, Z. A header row and extra columns are fine."
+                    : "You are asked before an existing file is replaced.",
+                Row(pathBox, browse));
 
-            layout.Controls.Add(new Label { Text = "Units:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
             unitBox.DropDownStyle = ComboBoxStyle.DropDownList;
             unitBox.Items.AddRange(UnitNames);
             unitBox.SelectedIndex = Array.IndexOf(UnitChoices, lastUnit);
-            unitBox.Width = 160;
-            layout.Controls.Add(unitBox, 1, 2);
+            unitBox.Width = 180;
+            unitNote = Note("", ContentWidth);
+            unitNote.Margin = new Padding(0, 6, 0, 0);
+            AddSection("Units",
+                import
+                    ? "The units of the numbers in the file."
+                    : "The units to write the numbers in. The header row names them, so Import Points picks them up.",
+                unitBox, unitNote);
 
-            unitNote.AutoSize = true;
-            unitNote.ForeColor = SystemColors.GrayText;
-            layout.Controls.Add(unitNote, 1, 3);
-            layout.SetColumnSpan(unitNote, 2);
-
-            okButton.Text = import ? "Import" : "Export";
-            okButton.AutoSize = true;
-            okButton.Click += (s, e) => Accept();
-            var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
-            var buttons = new FlowLayoutPanel { FlowDirection = FlowDirection.RightToLeft, AutoSize = true, Dock = DockStyle.Fill, Margin = new Padding(0, 10, 0, 0) };
-            buttons.Controls.Add(cancel);
-            buttons.Controls.Add(okButton);
-            layout.Controls.Add(buttons, 0, 4);
-            layout.SetColumnSpan(buttons, 3);
-
-            Controls.Add(layout);
-            AcceptButton = okButton;
+            Button ok = AddButton(import ? "Import" : "Export", primary: true);
+            ok.Click += (s, e) => Accept();
+            Button cancel = AddButton("Cancel", DialogResult.Cancel);
+            AcceptButton = ok;
             CancelButton = cancel;
-            AutoSize = true;
-            AutoSizeMode = AutoSizeMode.GrowAndShrink;
 
             if (!import && suggestedFileName != null)
             {
                 pathBox.Text = Path.Combine(lastDirectory ?? DefaultDirectory(), suggestedFileName);
             }
             OnPathChanged();
+            ResumeLayout(true);
         }
 
         public string FilePath => pathBox.Text.Trim();

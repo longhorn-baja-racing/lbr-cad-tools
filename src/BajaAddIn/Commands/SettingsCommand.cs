@@ -18,9 +18,27 @@ namespace Lbr.CadTools.AddIn.Commands
 
         public string Title => "Settings";
 
-        public string Hint => "Settings file, hidden buttons, and add-ins to load or unload at startup";
+        public string Hint => "Hide buttons, auto-load other add-ins, and check settings.json";
 
-        public string IconText => "ST";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = "Shows the settings file, what each setting means, and any problems found in it. Settings can hide buttons you do not use and load or unload other add-ins when SolidWorks starts.",
+            Steps = new[]
+            {
+                "Click Settings.",
+                "Click Edit in Notepad, change the file, and save it.",
+                "Click Apply now to re-read it.",
+            },
+            Notes = new[]
+            {
+                "Hidden buttons change at the next SolidWorks start.",
+                "The window lists the add-in titles on this computer, for the load and unload lists.",
+            },
+        };
+
+        public ToolGroup Group => ToolGroup.Help;
+
+        public ToolIcon Icon => ToolIcon.Settings;
 
         public IReadOnlyCollection<swDocumentTypes_e> DocumentTypes { get; } = new[]
         {

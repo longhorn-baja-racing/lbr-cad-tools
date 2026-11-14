@@ -20,10 +20,31 @@ namespace Lbr.CadTools.AddIn.Commands
         public string Title => fix ? "Fix All" : "Float All";
 
         public string Hint => fix
-            ? "Fix every top-level component in the active assembly (all configurations)"
-            : "Float every top-level component in the active assembly (all configurations)";
+            ? "Lock every top-level component in place, in all configurations"
+            : "Free every top-level component so it can be dragged, in all configurations";
 
-        public string IconText => fix ? "FX" : "FL";
+        public ToolHelp Help => new ToolHelp
+        {
+            Purpose = fix
+                ? "Fixes every top-level component of the open assembly, in every configuration, so nothing moves while you mate, measure, or take screenshots."
+                : "Floats every top-level component of the open assembly, in every configuration, so you can drag parts around to check motion and clearance.",
+            Needs = "Open an assembly.",
+            Steps = new[]
+            {
+                "Open the assembly (.SLDASM).",
+                fix ? "Click Fix All." : "Click Float All.",
+                "Read the summary. It counts what changed and lists anything that could not be changed.",
+            },
+            Notes = new[]
+            {
+                "Ctrl+Z cannot undo this. Use Restore Fix States to put every component back.",
+                "Only top-level components change. Parts inside subassemblies, and the subassembly files, are left alone.",
+            },
+        };
+
+        public ToolGroup Group => ToolGroup.Assembly;
+
+        public ToolIcon Icon => fix ? ToolIcon.FixAll : ToolIcon.FloatAll;
 
         public IReadOnlyCollection<swDocumentTypes_e> DocumentTypes { get; } = new[]
         {
