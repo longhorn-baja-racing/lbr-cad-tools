@@ -63,13 +63,13 @@ namespace Lbr.CadTools.AddIn.Util
                     switch (icon)
                     {
                         case ToolIcon.FixAll: Lock(p, closed: true); break;
-                        case ToolIcon.FloatAll: Lock(p, closed: false); break;
+                        case ToolIcon.FloatAll: Move(p); break;
                         case ToolIcon.RestoreFixStates: Restore(p); break;
-                        case ToolIcon.ImportPoints: Points(p, import: true); break;
-                        case ToolIcon.ExportPoints: Points(p, import: false); break;
+                        case ToolIcon.ImportPoints: ImportTray(p); break;
+                        case ToolIcon.ExportPoints: ExportSheet(p); break;
                         case ToolIcon.BatchExport: Sheets(p); break;
                         case ToolIcon.MountingTab: Tab(p); break;
-                        case ToolIcon.SuspensionCheck: Wheel(p); break;
+                        case ToolIcon.SuspensionCheck: Camber(p); break;
                         case ToolIcon.AutoSave: Disk(p); break;
                         case ToolIcon.Settings: Gear(p); break;
                         case ToolIcon.About: Info(p); break;
@@ -128,6 +128,31 @@ namespace Lbr.CadTools.AddIn.Util
             p.G.FillRectangle(p.Cut, 47, 60, 6, 13);
         }
 
+        /// <summary>Four-way move arrows around a free part: the SolidWorks "drag me" cross.</summary>
+        private static void Move(Painter p)
+        {
+            using (Pen shaft = p.InkPen(9))
+            {
+                shaft.StartCap = shaft.EndCap = LineCap.Flat;
+                p.G.DrawLine(shaft, 50, 24, 50, 76);
+                p.G.DrawLine(shaft, 24, 50, 76, 50);
+            }
+            const float tip = 38, back = 22, half = 13;
+            for (int i = 0; i < 4; i++)
+            {
+                double a = i * Math.PI / 2;
+                float dx = (float)Math.Cos(a), dy = (float)Math.Sin(a);
+                p.G.FillPolygon(p.Ink, new[]
+                {
+                    new PointF(50 + dx * tip, 50 + dy * tip),
+                    new PointF(50 + dx * back - dy * half, 50 + dy * back + dx * half),
+                    new PointF(50 + dx * back + dy * half, 50 + dy * back - dx * half),
+                });
+            }
+            p.Circle(p.Cut, 50, 50, 15);
+            p.Circle(p.Ink, 50, 50, 10.5f);
+        }
+
         /// <summary>Undo-style arrow (over the top, down on the left) around a small padlock.</summary>
         private static void Restore(Painter p)
         {
@@ -161,32 +186,52 @@ namespace Lbr.CadTools.AddIn.Util
 
         // ---- Sketch points ----
 
-        /// <summary>Three sketch points with an arrow coming in (import) or going out (export).</summary>
-        private static void Points(Painter p, bool import)
+        /// <summary>Arrow dropping into an open tray that holds three sketch points.</summary>
+        private static void ImportTray(Painter p)
         {
-            using (Pen link = p.InkPen(4) )
+            using (Pen tray = p.InkPen(8))
             {
-                link.DashStyle = DashStyle.Dot;
-                p.G.DrawLines(link, new[] { new PointF(22, 78), new PointF(50, 66), new PointF(78, 78) });
+                p.G.DrawLines(tray, new[] { new PointF(15, 52), new PointF(15, 84), new PointF(85, 84), new PointF(85, 52) });
             }
-            foreach (PointF pt in new[] { new PointF(22, 78), new PointF(50, 66), new PointF(78, 78) })
+            foreach (PointF pt in new[] { new PointF(31, 70), new PointF(69, 70) })
             {
-                p.Circle(p.Ink, pt.X, pt.Y, 8);
-                p.Circle(p.Cut, pt.X, pt.Y, 3);
+                p.Circle(p.Ink, pt.X, pt.Y, 7);
             }
+            p.Circle(p.Ink, 50, 72, 7);
 
-            // Vertical arrow above the middle point.
-            float top = 14, bottom = 52;
-            if (import)
+            p.G.FillRectangle(p.Ink, 43, 10, 14, 26);
+            p.G.FillPolygon(p.Ink, new[] { new PointF(28, 33), new PointF(72, 33), new PointF(50, 58) });
+        }
+
+        /// <summary>Sheet of points with an arrow leaving it to the upper right.</summary>
+        private static void ExportSheet(Painter p)
+        {
+            using (GraphicsPath sheet = Sheet(12, 26, 54, 62, 14))
             {
-                p.G.FillRectangle(p.Ink, 44, top, 12, 22);
-                p.G.FillPolygon(p.Ink, new[] { new PointF(30, 34), new PointF(70, 34), new PointF(50, bottom) });
+                p.G.FillPath(p.Ink, sheet);
             }
-            else
+            p.Circle(p.Cut, 25, 74, 5.5f);
+            p.Circle(p.Cut, 39, 60, 5.5f);
+            p.Circle(p.Cut, 53, 74, 5.5f);
+
+            // Arrow with a tile-colored outline so it reads where it crosses the sheet.
+            var tip = new PointF(88, 12);
+            var shaftStart = new PointF(46, 54);
+            using (Pen halo = p.CutPen(17))
             {
-                p.G.FillRectangle(p.Ink, 44, top + 16, 12, 22);
-                p.G.FillPolygon(p.Ink, new[] { new PointF(30, 32), new PointF(70, 32), new PointF(50, top - 2) });
+                p.G.DrawLine(halo, shaftStart, new PointF(76, 24));
             }
+            var head = new[] { tip, new PointF(87, 42), new PointF(58, 13) };
+            using (Pen halo = p.CutPen(6))
+            {
+                halo.LineJoin = LineJoin.Round;
+                p.G.DrawPolygon(halo, head);
+            }
+            using (Pen shaft = p.InkPen(9))
+            {
+                p.G.DrawLine(shaft, shaftStart, new PointF(74, 26));
+            }
+            p.G.FillPolygon(p.Ink, head);
         }
 
         // ---- Files ----
@@ -256,34 +301,39 @@ namespace Lbr.CadTools.AddIn.Util
             p.Circle(p.Cut, 50, 76, 8);
         }
 
-        /// <summary>Double wishbone corner: two arms from inboard pivots to a cambered wheel, on the ground.</summary>
-        private static void Wheel(Painter p)
+        /// <summary>Front view of a tire leaning in (camber) on the ground, with a vertical reference line and the angle between them.</summary>
+        private static void Camber(Painter p)
         {
-            using (Pen arm = p.InkPen(7))
-            {
-                p.G.DrawLine(arm, 18, 34, 58, 30);
-                p.G.DrawLine(arm, 18, 64, 56, 66);
-            }
-            p.Circle(p.Ink, 18, 34, 7);
-            p.Circle(p.Ink, 18, 64, 7);
-            p.Circle(p.Cut, 18, 34, 2.5f);
-            p.Circle(p.Cut, 18, 64, 2.5f);
+            const float lean = -16;           // degrees; negative leans the top inward (left)
+            var contact = new PointF(60, 84); // bottom center of the tire
 
             GraphicsState s = p.G.Save();
-            p.G.TranslateTransform(68, 48);
-            p.G.RotateTransform(-10);
-            using (GraphicsPath tire = RoundedRect(-13, -36, 26, 72, 9))
-            using (Pen outline = p.CutPen(5))
+            p.G.TranslateTransform(contact.X, contact.Y);
+            p.G.RotateTransform(lean);
+            using (GraphicsPath tire = RoundedRect(-15, -70, 30, 70, 10))
             {
-                p.G.DrawPath(outline, tire);
                 p.G.FillPath(p.Ink, tire);
             }
-            using (GraphicsPath rim = RoundedRect(-5, -22, 10, 44, 3))
+            using (GraphicsPath rim = RoundedRect(-4.5f, -55, 9, 40, 3))
             {
                 p.G.FillPath(p.Cut, rim);
             }
             p.G.Restore(s);
-            using (Pen ground = p.InkPen(6))
+
+            // Vertical reference through the contact patch, and the camber arc.
+            using (Pen halo = p.CutPen(9))
+            using (Pen line = p.InkPen(4.5f))
+            {
+                halo.DashStyle = DashStyle.Solid;
+                p.G.DrawLine(halo, contact.X, 78, contact.X, 12);
+                p.G.DrawLine(line, contact.X, 78, contact.X, 12);
+                const float r = 54;
+                using (Pen arc = p.InkPen(5))
+                {
+                    p.G.DrawArc(arc, contact.X - r, contact.Y - r, 2 * r, 2 * r, -90, lean);
+                }
+            }
+            using (Pen ground = p.InkPen(7))
             {
                 p.G.DrawLine(ground, 14, 89, 86, 89);
             }
