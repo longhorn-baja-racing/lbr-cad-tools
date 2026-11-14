@@ -72,6 +72,13 @@ namespace Lbr.CadTools.SmokeTest
             // --only=<name>[,<name>] runs just those tests (names as in the Run calls below).
             string only = args.FirstOrDefault(a => a.StartsWith("--only="))?.Substring("--only=".Length);
             bool Want(string name) => only == null || only.Split(',').Contains(name, StringComparer.OrdinalIgnoreCase);
+            // --samples=<folder> builds the demo models there instead of testing.
+            string samples = args.FirstOrDefault(a => a.StartsWith("--samples="))?.Substring("--samples=".Length);
+            if (samples != null)
+            {
+                only = "samples";
+                samples = Path.GetFullPath(samples);
+            }
             // --inject=<name>:once|always adds a failure to a test group, to check the retry logic.
             string[] inject = args.FirstOrDefault(a => a.StartsWith("--inject="))?.Substring("--inject=".Length).Split(':');
 
@@ -234,6 +241,10 @@ namespace Lbr.CadTools.SmokeTest
             {
                 Step(visible ? "Starting SolidWorks (visible; do not click in it)" : "Starting SolidWorks (hidden)");
                 app = Start();
+                if (samples != null)
+                {
+                    Run("samples", () => BuildSamples(app, samples));
+                }
                 Run("fix", () => FixComponentsTest(app, dir, keep));
                 Run("points", () => SketchPointsTest(app, dir, keep));
                 Run("export", () => BatchExportTest(app, dir));
@@ -1170,6 +1181,94 @@ namespace Lbr.CadTools.SmokeTest
 
         // ---- Suspension travel sweep (issue #12) ----
 
+        /// <summary>
+        /// A front left upright swung about the lower ball joint by an angle
+        /// dimension (100 deg), with HP_LBJ/UBJ/SA/WC_FL reference points on the
+        /// sketch: turning the angle by d changes camber by -d and KPI by +d.
+        /// </summary>
+        private static IModelDoc2 BuildUpright(ISldWorks app, string path, out IDimension angle)
+        {
+            const double deg = Math.PI / 180;
+            angle = null;
+            IModelDoc2 part = NewPart(app);
+            Planes(part).First().Select2(false, 0); // Front plane: sketch X = model X (left), Y = model Y (up)
+            ISketchManager sm = part.SketchManager;
+            sm.InsertSketch(true);
+            sm.AddToDB = true;
+            var ground = (ISketchSegment)sm.CreateLine(0, 0, 0, 0.1, 0, 0);
+            var upright = (ISketchSegment)sm.CreateLine(0, 0, 0, -0.04, 0.22, 0);
+            var spindle = (ISketchSegment)sm.CreateLine(-0.02, 0.11, 0, 0.078, 0.128, 0);
+            sm.AddToDB = false;
+
+            void Relate(string relation, params object[] picks)
+            {
+                part.ClearSelection2(true);
+                foreach (object o in picks)
+                {
+                    if (o is ISketchSegment s)
+                    {
+                        s.Select4(true, null);
+                    }
+                    else
+                    {
+                        ((ISketchPoint)o).Select4(true, null);
+                    }
+                }
+                part.SketchAddConstraints(relation);
+            }
+            IDimension Dimension(double x, double y, double value, params ISketchSegment[] picks)
+            {
+                part.ClearSelection2(true);
+                foreach (ISketchSegment s in picks)
+                {
+                    s.Select4(true, null);
+                }
+                var dd = (IDisplayDimension)part.AddDimension2(x, y, 0);
+                IDimension d = dd?.GetDimension2(0);
+                d?.SetSystemValue3(value, (int)swSetValueInConfiguration_e.swSetValue_InThisConfiguration, null);
+                return d;
+            }
+            ISketchPoint Start(ISketchSegment s) => (ISketchPoint)((ISketchLine)s).GetStartPoint2();
+            ISketchPoint End(ISketchSegment s) => (ISketchPoint)((ISketchLine)s).GetEndPoint2();
+
+            Relate("sgFIXED", ground);
+            Relate("sgMERGEPOINTS", Start(ground), Start(upright));
+            Relate("sgATMIDDLE", Start(spindle), upright);
+            Relate("sgPERPENDICULAR", spindle, upright);
+            Dimension(-0.08, 0.1, 0.22, upright);
+            Dimension(0.05, 0.2, 0.10, spindle);
+            angle = Dimension(0.03, 0.05, 100 * deg, ground, upright);
+            part.ClearSelection2(true);
+            sm.InsertSketch(true);
+            Check(angle != null, "angle dimension made");
+            if (angle == null)
+            {
+                return part;
+            }
+
+            // Reference points on the sketch points, named for the front left corner.
+            var sketch = (ISketch)((IFeature)part.FeatureByPositionReverse(0)).GetSpecificFeature2();
+            int named = 0;
+            foreach ((ISketchPoint pt, string name) in new[]
+            {
+                (Start(upright), "HP_LBJ_FL"), (End(upright), "HP_UBJ_FL"), (Start(spindle), "HP_SA_FL"), (End(spindle), "HP_WC_FL"),
+            })
+            {
+                part.ClearSelection2(true);
+                pt.Select4(false, null);
+                object created = part.FeatureManager.InsertReferencePoint((int)swRefPointType_e.swRefPointSketchPoint, 0, 0, 1);
+                if (created != null && part.FeatureByPositionReverse(0) is IFeature f && f.GetTypeName2() == "RefPoint")
+                {
+                    f.Name = name;
+                    named++;
+                }
+            }
+            part.ClearSelection2(true);
+            Check(named == 4, $"4 hardpoints named (got {named})");
+            Save(part, path);
+            return part;
+        }
+
         private static void SweepTest(ISldWorks app, string dir)
         {
             Step("Sweep: upright swung by a sketch angle, HP_ points on the sketch");
@@ -1179,82 +1278,11 @@ namespace Lbr.CadTools.SmokeTest
             app.SetUserPreferenceToggle(inputDim, false); // no value prompt while dimensioning
             try
             {
-                IModelDoc2 part = NewPart(app);
-                Planes(part).First().Select2(false, 0); // Front plane: sketch X = model X (left), Y = model Y (up)
-                ISketchManager sm = part.SketchManager;
-                sm.InsertSketch(true);
-                sm.AddToDB = true;
-                var ground = (ISketchSegment)sm.CreateLine(0, 0, 0, 0.1, 0, 0);
-                var upright = (ISketchSegment)sm.CreateLine(0, 0, 0, -0.04, 0.22, 0);
-                var spindle = (ISketchSegment)sm.CreateLine(-0.02, 0.11, 0, 0.078, 0.128, 0);
-                sm.AddToDB = false;
-
-                void Relate(string relation, params object[] picks)
-                {
-                    part.ClearSelection2(true);
-                    foreach (object o in picks)
-                    {
-                        if (o is ISketchSegment s)
-                        {
-                            s.Select4(true, null);
-                        }
-                        else
-                        {
-                            ((ISketchPoint)o).Select4(true, null);
-                        }
-                    }
-                    part.SketchAddConstraints(relation);
-                }
-                IDimension Dimension(double x, double y, double value, params ISketchSegment[] picks)
-                {
-                    part.ClearSelection2(true);
-                    foreach (ISketchSegment s in picks)
-                    {
-                        s.Select4(true, null);
-                    }
-                    var dd = (IDisplayDimension)part.AddDimension2(x, y, 0);
-                    IDimension d = dd?.GetDimension2(0);
-                    d?.SetSystemValue3(value, (int)swSetValueInConfiguration_e.swSetValue_InThisConfiguration, null);
-                    return d;
-                }
-                ISketchPoint Start(ISketchSegment s) => (ISketchPoint)((ISketchLine)s).GetStartPoint2();
-                ISketchPoint End(ISketchSegment s) => (ISketchPoint)((ISketchLine)s).GetEndPoint2();
-
-                Relate("sgFIXED", ground);
-                Relate("sgMERGEPOINTS", Start(ground), Start(upright));
-                Relate("sgATMIDDLE", Start(spindle), upright);
-                Relate("sgPERPENDICULAR", spindle, upright);
-                Dimension(-0.08, 0.1, 0.22, upright);
-                Dimension(0.05, 0.2, 0.10, spindle);
-                IDimension angle = Dimension(0.03, 0.05, 100 * deg, ground, upright);
-                part.ClearSelection2(true);
-                sm.InsertSketch(true);
-                Check(angle != null, "angle dimension made");
+                IModelDoc2 part = BuildUpright(app, Path.Combine(dir, "Sweep Upright.SLDPRT"), out IDimension angle);
                 if (angle == null)
                 {
                     return;
                 }
-
-                // Reference points on the sketch points, named for the front left corner.
-                var sketch = (ISketch)((IFeature)part.FeatureByPositionReverse(0)).GetSpecificFeature2();
-                int named = 0;
-                foreach ((ISketchPoint pt, string name) in new[]
-                {
-                    (Start(upright), "HP_LBJ_FL"), (End(upright), "HP_UBJ_FL"), (Start(spindle), "HP_SA_FL"), (End(spindle), "HP_WC_FL"),
-                })
-                {
-                    part.ClearSelection2(true);
-                    pt.Select4(false, null);
-                    object created = part.FeatureManager.InsertReferencePoint((int)swRefPointType_e.swRefPointSketchPoint, 0, 0, 1);
-                    if (created != null && part.FeatureByPositionReverse(0) is IFeature f && f.GetTypeName2() == "RefPoint")
-                    {
-                        f.Name = name;
-                        named++;
-                    }
-                }
-                part.ClearSelection2(true);
-                Check(named == 4, $"4 hardpoints named (got {named})");
-                Save(part, Path.Combine(dir, "Sweep Upright.SLDPRT"));
 
                 SuspensionSweeper.Driver driver = SuspensionSweeper.FromDimension(angle);
                 Check(driver != null && driver.Angular && Math.Abs(driver.Start - 100 * deg) < 1e-9, $"driver read: {driver?.Name}, angular");
@@ -1317,6 +1345,87 @@ namespace Lbr.CadTools.SmokeTest
             {
                 app.SetUserPreferenceToggle(inputDim, inputDimSetting);
             }
+        }
+
+        // ---- Sample models (issue #18): SwSmokeTest --samples=<folder> ----
+
+        /// <summary>
+        /// Builds the demo models in samples/ with the SolidWorks on this
+        /// computer, so they open in that version. Run on the oldest version the
+        /// team uses (2025) before committing them.
+        /// </summary>
+        private static void BuildSamples(ISldWorks app, string root)
+        {
+            string Folder(string name)
+            {
+                string d = Path.Combine(root, name);
+                Directory.CreateDirectory(d);
+                return d;
+            }
+
+            Step("Samples: Tube Notcher frame");
+            IModelDoc2 frame = NewPart(app);
+            string profile = FindPipeProfile(app, out string config);
+            AddMembers(frame, profile, config, "LFS", new[]
+            {
+                (new Vec3(0, 0, 0), new Vec3(1, 0, 0)), (new Vec3(1, 0, 0), new Vec3(1, 0, 0.6)),
+                (new Vec3(1, 0, 0.6), new Vec3(0, 0, 0.6)), (new Vec3(0, 0, 0.6), new Vec3(0, 0, 0)),
+            });
+            AddMembers(frame, profile, config, "RRH", new[]
+            {
+                (new Vec3(0, 0, 0), new Vec3(0, 0.8, 0)), (new Vec3(0, 0.8, 0), new Vec3(0, 0.8, 0.6)),
+                (new Vec3(0, 0.8, 0.6), new Vec3(0, 0, 0.6)),
+            });
+            AddMembers(frame, profile, config, "SM", new[] { (new Vec3(0.5, 0, 0), new Vec3(0, 0.8, 0.3)) });
+            Check(FrameNotcher.IsWeldmentPart(frame), "frame is a weldment");
+            Save(frame, Path.Combine(Folder("Frame"), "CHA_0001_DemoFrame_REV01_V01.SLDPRT"));
+            CloseAll(app);
+
+            Step("Samples: suspension upright (Suspension Check, Sweep, Monitor)");
+            const int inputDim = (int)swUserPreferenceToggle_e.swInputDimValOnCreate;
+            bool inputDimSetting = app.GetUserPreferenceToggle(inputDim);
+            app.SetUserPreferenceToggle(inputDim, false);
+            try
+            {
+                BuildUpright(app, Path.Combine(Folder("Suspension"), "DYN_0001_UprightSweep_REV01_V01.SLDPRT"), out IDimension angle);
+                Check(angle != null, "upright with its driving angle");
+            }
+            finally
+            {
+                app.SetUserPreferenceToggle(inputDim, inputDimSetting);
+            }
+            CloseAll(app);
+
+            Step("Samples: pedal box tube (Mounting Tab insert)");
+            string tabs = Folder("Tabs");
+            string tube = CreateTubePart(app, tabs, "ERG_0002_PedalTube_REV01_V01", 0.5 * Units.MetersPerInch, 0.3);
+            IModelDoc2 pedal = NewAssembly(app);
+            AddComponent(pedal, tube, 0);
+            Save(pedal, Path.Combine(tabs, "aERG_0001_PedalBox_REV01_V01.SLDASM"));
+            CloseAll(app);
+
+            Step("Samples: assembly with naming mistakes (Name Check)");
+            string naming = Folder("Naming");
+            string rail = CreateBoxPart(app, naming, "CHA_0011_SeatRail_REV02_V01", 0.30);
+            string back = CreateBoxPart(app, naming, "CHA_0012_SeatBack_REV01_V01", 0.25);   // wrong REV
+            string bracket = CreateBoxPart(app, naming, "Seat Bracket", 0.05);                // not the convention
+            string spacer = CreateBoxPart(app, naming, "CHA_0011_Spacer_REV02_V01", 0.02);   // number used twice
+            IModelDoc2 seat = NewAssembly(app);
+            AddComponent(seat, rail, 0);
+            AddComponent(seat, back, 0.35);
+            AddComponent(seat, bracket, 0.65);
+            AddComponent(seat, spacer, 0.75);
+            Save(seat, Path.Combine(naming, "aCHA_0010_SeatFrame_REV02_V01.SLDASM"));
+            List<NameCheck> checks = NamingConvention.CheckAssembly(
+                NameScanner.Scan(seat).Top, NameScanner.Scan(seat).Files, NamingConvention.DefaultTeams.Keys.ToList());
+            checks.Where(c => !c.Ok).ToList().ForEach(c => Console.WriteLine($"  to fix: {c.File.BaseName}"));
+            Check(checks.Count(c => !c.Ok) == 4, "Name Check finds the planted mistakes (wrong REV, bad name, number used twice on 2 files)");
+            CloseAll(app);
+
+            Step("Samples: bracket to draw (Make Drawings)");
+            CreateBoxPart(app, Folder("Drawings"), "CHA_0020_SeatBracket_REV01_V01", 0.06);
+            CloseAll(app);
+            Console.WriteLine($"  Samples written to {root}");
         }
 
         // ---- Add-in config (issue #9) ----
