@@ -1289,6 +1289,29 @@ namespace Lbr.CadTools.SmokeTest
                 Check(Math.Abs(sum.BumpSteerPerInch) < 1e-6 && sum.TravelMax > sum.TravelMin, "summary: travel range, no bump steer");
                 string csv = SuspensionSweep.Csv(r.Steps, r.Reference, driver.Name, "deg", v => v / deg);
                 Check(csv.Split('\n').Count(l => l.Trim().Length > 0) == 6, "CSV has a header and 5 rows");
+
+                Step("Monitor: points found once, re-read after the model moves");
+                using (var monitor = new SuspensionMonitor(part, settings))
+                {
+                    MonitorReading a = monitor.Update();
+                    Check(a.PointCount == 4 && a.Corners.Count == 1 && Math.Abs(a.Corners[0].Camber - start.Camber) < 1e-6,
+                        $"reads the corner at the start (camber {a.Corners.FirstOrDefault()?.Camber:F2})");
+                    angle.SetSystemValue3(107 * deg, (int)swSetValueInConfiguration_e.swSetValue_InThisConfiguration, null);
+                    part.ForceRebuild3(false);
+                    MonitorReading b = monitor.Update();
+                    Check(b.Corners.Count == 1 && Math.Abs(b.Corners[0].Camber - (start.Camber - 7)) < 1e-6,
+                        $"follows the change without finding points again (camber {b.Corners.FirstOrDefault()?.Camber:F2})");
+                    var clock = Stopwatch.StartNew();
+                    for (int i = 0; i < 50; i++)
+                    {
+                        monitor.Update();
+                    }
+                    double ms = clock.Elapsed.TotalMilliseconds / 50;
+                    Console.WriteLine($"  {ms:F1} ms per update (out of process; in process is faster)");
+                    Check(ms < 90, "an update fits in the 90 ms live interval");
+                    angle.SetSystemValue3(100 * deg, (int)swSetValueInConfiguration_e.swSetValue_InThisConfiguration, null);
+                    part.ForceRebuild3(false);
+                }
             }
             finally
             {
