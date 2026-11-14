@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
 using System.Text.RegularExpressions;
@@ -21,6 +22,9 @@ namespace Lbr.CadTools.ApiCheck
     internal static class Program
     {
         private const int YearOffset = 1992; // SolidWorks major revision 33 = 2025
+
+        /// <summary>Help pages with an Availability line this tool could not read.</summary>
+        private static readonly HashSet<string> unreadable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private static int Main(string[] args)
         {
@@ -59,6 +63,11 @@ namespace Lbr.CadTools.ApiCheck
                 var tooNew = new List<string>();
                 foreach (string member in ReferencedMembers(dlls))
                 {
+                    if (unreadable.Contains(member) || unreadable.Contains("I" + member))
+                    {
+                        tooNew.Add($"{member} (could not read its Availability; check the API help by hand)");
+                        continue;
+                    }
                     int? major = Lookup(added, member);
                     string when = major == null ? "before versioned help" : $"SolidWorks {major + YearOffset}";
                     if (major > maxMajor)
@@ -110,8 +119,9 @@ namespace Lbr.CadTools.ApiCheck
             }
 
             var page = new Regex(@"~SolidWorks\.Interop\.\w+\.(\w+)~(\w+)$");
-            var availability = new Regex(@"Availability\s.{0,120}?Revision Number\s+(\d+)", RegexOptions.Singleline);
+            var availability = new Regex(@"Availability\s.{0,160}?Revision\s+Number\s+(\d+)", RegexOptions.Singleline);
             var added = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            unreadable.Clear();
             foreach (string file in Directory.EnumerateFiles(html, "*.htm*", SearchOption.AllDirectories))
             {
                 Match m = page.Match(Path.GetFileNameWithoutExtension(file));
@@ -119,8 +129,13 @@ namespace Lbr.CadTools.ApiCheck
                 {
                     continue;
                 }
-                string text = Regex.Replace(File.ReadAllText(file), "<[^>]*>", " ");
+                // Some pages write "Revision&nbsp;Number&nbsp;14"; decode entities before matching.
+                string text = WebUtility.HtmlDecode(Regex.Replace(File.ReadAllText(file), "<[^>]*>", " ")).Replace('\u00A0', ' ');
                 Match a = availability.Match(text);
+                if (!a.Success && Regex.IsMatch(text, @"\bAvailability\b"))
+                {
+                    unreadable.Add(m.Groups[1].Value + "." + m.Groups[2].Value);
+                }
                 // Pages without an Availability line describe the original API, older than any supported release.
                 added[m.Groups[1].Value + "." + m.Groups[2].Value] = a.Success ? int.Parse(a.Groups[1].Value) : 0;
             }
