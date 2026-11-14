@@ -1028,6 +1028,23 @@ namespace Lbr.CadTools.SmokeTest
 
             r = DrawingMaker.Make(app, new[] { bracket }, new DrawingMaker.Options { Replace = true }, keepLastOpen: false);
             Check(r.Made.Count == 1 && r.Failed.Count == 0, "Replace remakes an existing drawing");
+
+            Step("Drawings: replacing a drawing that is still open (user report)");
+            string plateDrawing = Path.Combine(folder, "dCHA_0003_BasePlate_REV01_V01.SLDDRW");
+            r = DrawingMaker.Make(app, new[] { plate }, new DrawingMaker.Options { Replace = true }, keepLastOpen: true);
+            Check(r.Made.Count == 1 && app.GetOpenDocumentByName(plateDrawing) != null, "single drawing left open");
+            r = DrawingMaker.Make(app, all, new DrawingMaker.Options { Replace = true }, keepLastOpen: false);
+            r.Failed.ForEach(f => Console.WriteLine("  failed: " + f));
+            Check(r.Made.Count == 3 && r.Failed.Count == 0, "batch Replace closes the open, unchanged drawing and remakes it");
+
+            r = DrawingMaker.Make(app, new[] { plate }, new DrawingMaker.Options { Replace = true }, keepLastOpen: true);
+            var openDrawing = (IModelDoc2)app.GetOpenDocumentByName(plateDrawing);
+            openDrawing.SetSaveFlag(); // pretend the user edited it
+            r = DrawingMaker.Make(app, all, new DrawingMaker.Options { Replace = true }, keepLastOpen: false);
+            r.Failed.ForEach(f => Console.WriteLine("  failed: " + f));
+            Check(r.Made.Count == 2 && r.Failed.Count == 1 && r.Failed[0].Contains("unsaved changes"),
+                "an open drawing with unsaved edits is left alone, with a clear message");
+            Check(app.GetOpenDocumentByName(plateDrawing) != null, "and it is still open");
         }
 
         private static void CheckDrawing(ISldWorks app, string path, string partNo, string description, Func<double, bool> scaleOk)

@@ -79,6 +79,18 @@ namespace Lbr.CadTools.AddIn.Features.Drawings
                     result.Existing.Add(Path.GetFileName(drawing));
                     continue;
                 }
+
+                // SolidWorks cannot save over a drawing that is open. Close it when it has no
+                // unsaved edits (it is being replaced anyway); otherwise leave it alone.
+                if (app.GetOpenDocumentByName(drawing) is IModelDoc2 open)
+                {
+                    if (open.GetSaveFlag())
+                    {
+                        result.Failed.Add($"{Path.GetFileName(drawing)} is open with unsaved changes. Save or close it, then run again.");
+                        continue;
+                    }
+                    app.CloseDoc(drawing);
+                }
                 try
                 {
                     MakeOne(app, model, drawing, options, keepOpen: keepLastOpen && i == modelPaths.Count - 1);
@@ -151,7 +163,9 @@ namespace Lbr.CadTools.AddIn.Features.Drawings
                 if (!doc.Extension.SaveAs3(drawingPath, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
                         (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, null, ref errors, ref warnings))
                 {
-                    throw new InvalidOperationException($"Could not save {Path.GetFileName(drawingPath)} (error {errors}).");
+                    throw new InvalidOperationException(
+                        $"Could not save {Path.GetFileName(drawingPath)}. Check that the file is not open in another program " +
+                        $"and that the folder is not read-only (SolidWorks error {errors}).");
                 }
                 Log.Info($"Drawing {drawingPath} at {plan.ScaleText}");
             }
