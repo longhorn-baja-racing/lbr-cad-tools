@@ -21,6 +21,7 @@ namespace Lbr.CadTools.AddIn.Util
         About,
         Guide,
         NameCheck,
+        Notcher,
     }
 
     /// <summary>
@@ -76,6 +77,7 @@ namespace Lbr.CadTools.AddIn.Util
                         case ToolIcon.About: Info(p); break;
                         case ToolIcon.Guide: Book(p); break;
                         case ToolIcon.NameCheck: NameTag(p); break;
+                        case ToolIcon.Notcher: Cope(p); break;
                     }
                 }
             }
@@ -339,6 +341,29 @@ namespace Lbr.CadTools.AddIn.Util
             {
                 p.G.DrawLine(ground, 14, 89, 86, 89);
             }
+        }
+
+        /// <summary>
+        /// A tube coped onto a cross tube, side on: a horizontal tube whose right
+        /// end has a curved bite (the fish mouth) hugging a cross tube seen end-on.
+        /// </summary>
+        private static void Cope(Painter p)
+        {
+            const float cx = 76, cy = 50, bite = 23;
+            using (var mouth = new GraphicsPath())
+            using (var region = new Region(new RectangleF(8, 33, 70, 34)))
+            {
+                mouth.AddEllipse(cx - bite, cy - bite, 2 * bite, 2 * bite);
+                region.Exclude(mouth);
+                p.G.FillRegion(p.Ink, region);
+            }
+            using (Pen seam = p.CutPen(4))
+            {
+                p.G.DrawLine(seam, 16, 42, 46, 42); // highlight line so it reads as a tube
+            }
+            // Cross tube with its bore, a small gap inside the bite.
+            p.Circle(p.Ink, cx, cy, bite - 5);
+            p.Circle(p.Cut, cx, cy, bite - 13);
         }
 
         /// <summary>Name tag (label with a string hole) carrying a check mark.</summary>

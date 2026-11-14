@@ -9,6 +9,7 @@ using Lbr.CadTools.AddIn.Features.AutoSave;
 using Lbr.CadTools.AddIn.Features.BatchExport;
 using Lbr.CadTools.AddIn.Features.FixComponents;
 using Lbr.CadTools.AddIn.Features.Naming;
+using Lbr.CadTools.AddIn.Features.Notcher;
 using Lbr.CadTools.AddIn.Features.SketchPoints;
 using Lbr.CadTools.AddIn.Features.Suspension;
 using Lbr.CadTools.AddIn.Features.Tabs;
@@ -143,6 +144,7 @@ namespace Lbr.CadTools.SmokeTest
                     Run("tabinsert", () => TabInsertTest(app, dir));
                     Run("suspension", () => SuspensionTest(app, dir));
                     Run("naming", () => NameCheckTest(app, dir));
+                    Run("notcher", () => NotcherTest(app, dir));
                 }
                 finally
                 {
@@ -864,6 +866,128 @@ namespace Lbr.CadTools.SmokeTest
                 throw new InvalidOperationException("Tube extrusion failed");
             }
             return Save(doc, Path.Combine(dir, name + ".SLDPRT"));
+        }
+
+        // ---- Tube notcher (issue #11) ----
+
+        private static void NotcherTest(ISldWorks app, string dir)
+        {
+            Step("Notcher: weldment frame (LFS floor, RRH hoop on its corners, SM diagonal)");
+            IModelDoc2 doc = NewPart(app);
+            string profile = FindPipeProfile(app, out string config);
+            Console.WriteLine($"  profile {profile} [{config}]");
+
+            // Floor rectangle 1.0 x 0.6 m, hoop 0.8 m tall on the x = 0 edge, diagonal mid-floor to mid-hoop.
+            IFeature lfs = AddMembers(doc, profile, config, "LFS", new[]
+            {
+                (new Vec3(0, 0, 0), new Vec3(1, 0, 0)), (new Vec3(1, 0, 0), new Vec3(1, 0, 0.6)),
+                (new Vec3(1, 0, 0.6), new Vec3(0, 0, 0.6)), (new Vec3(0, 0, 0.6), new Vec3(0, 0, 0)),
+            });
+            IFeature rrh = AddMembers(doc, profile, config, "RRH", new[]
+            {
+                (new Vec3(0, 0, 0), new Vec3(0, 0.8, 0)), (new Vec3(0, 0.8, 0), new Vec3(0, 0.8, 0.6)),
+                (new Vec3(0, 0.8, 0.6), new Vec3(0, 0, 0.6)),
+            });
+            IFeature sm = AddMembers(doc, profile, config, "SM", new[] { (new Vec3(0.5, 0, 0), new Vec3(0, 0.8, 0.3)) });
+            Check(lfs != null && rrh != null && sm != null, "three structural member features made");
+            if (lfs == null || rrh == null || sm == null)
+            {
+                return;
+            }
+            Console.WriteLine($"  feature types: {lfs.GetTypeName2()}");
+            Check(FrameNotcher.IsWeldmentPart(doc), "part read as a weldment");
+
+            FrameNotcher.Frame frame = FrameNotcher.Read(doc);
+            Console.WriteLine($"  groups {string.Join(", ", frame.Groups)}; members {frame.Members.Count}; skipped {frame.Skipped.Count}");
+            foreach (FrameJoint j in frame.Joints)
+            {
+                Console.WriteLine($"  joint {j.A} (end {j.AtEndOfA}) / {j.B} (end {j.AtEndOfB})");
+            }
+            Check(frame.Members.Count == 8, $"8 tube bodies (got {frame.Members.Count})");
+            Check(frame.Groups.SequenceEqual(new[] { "LFS", "RRH", "SM" }), "groups in tree order");
+
+            List<string> order = Notching.DefaultOrder(frame.Groups);
+            Check(order.SequenceEqual(new[] { "LFS", "RRH", "SM" }), "default order LFS > RRH > SM");
+            NotchPlan plan = Notching.Plan(frame.Members, frame.Joints, order);
+            foreach (NotchCut c in plan.Cuts)
+            {
+                Console.WriteLine($"  cut {c.Trimmed} around {c.Boundary} ({c.Reason})");
+            }
+            string Group(string body) => frame.Members.Single(m => m.Body == body).Group;
+            Check(plan.Cuts.Any(c => Group(c.Trimmed) == "SM" && Group(c.Boundary) == "LFS" && c.Reason == NotchReason.EndsOnThroughTube),
+                "SM coped around the LFS it ends on");
+            Check(plan.Cuts.Any(c => Group(c.Trimmed) == "SM" && Group(c.Boundary) == "RRH" && c.Reason == NotchReason.EndsOnThroughTube),
+                "SM coped around the RRH top it ends on");
+            Check(plan.Cuts.Where(c => c.Reason == NotchReason.Priority).All(c => Group(c.Trimmed) == "RRH" && Group(c.Boundary) == "LFS")
+                  && plan.Cuts.Any(c => c.Reason == NotchReason.Priority),
+                "at the corner nodes RRH is coped around LFS (priority)");
+            Check(plan.Crossings.Count == 0, "no crossings");
+
+            // An un-notched copy to try the button on by hand (--keep keeps it in Documents).
+            Save(doc, Path.Combine(dir, "Notch Demo Frame.SLDPRT"));
+
+            double before = Volume(doc);
+            (int made, List<string> problems) = FrameNotcher.Apply(doc, plan);
+            problems.ForEach(p => Console.WriteLine("  problem: " + p));
+            double after = Volume(doc);
+            Console.WriteLine($"  {made} trim feature(s); volume {before * 1e6:F1} -> {after * 1e6:F1} cm3");
+            Check(made == plan.TrimOrder.Count && problems.Count == 0, $"one trim feature per coped tube ({plan.TrimOrder.Count})");
+            Check(after < before - 1e-7, "material removed");
+
+            FrameNotcher.Frame again = FrameNotcher.Read(doc); // deletes the notches, re-measures
+            Check(again.OldNotches == made, $"re-run removes the {made} earlier notch feature(s)");
+            Check(Math.Abs(Volume(doc) - before) < 1e-9, "frame back to untrimmed");
+            (made, problems) = FrameNotcher.Apply(doc, Notching.Plan(again.Members, again.Joints, order));
+            Check(Math.Abs(Volume(doc) - after) < 1e-9 && problems.Count == 0, "re-run gives the same result");
+
+            // Coped tubes no longer overlap what they were cut around.
+            FrameNotcher.Frame trimmed = FrameNotcher.ReadWithoutDeleting(doc);
+            Check(trimmed.Joints.Count == 0, $"no overlaps left between groups (got {trimmed.Joints.Count})");
+            Save(doc, Path.Combine(dir, "Notch Frame.SLDPRT"));
+        }
+
+        private static double Volume(IModelDoc2 doc) => doc.Extension.CreateMassProperty().Volume;
+
+        private static string FindPipeProfile(ISldWorks app, out string config)
+        {
+            string root = app.GetUserPreferenceStringValue((int)swUserPreferenceStringValue_e.swFileLocationsWeldmentProfiles);
+            string path = (root ?? "").Split(';')
+                .Select(r => Path.Combine(r.Trim(), "ansi inch", "pipe.sldlfp"))
+                .FirstOrDefault(File.Exists)
+                ?? throw new InvalidOperationException("ansi inch\\pipe.sldlfp not found under " + root);
+            string[] configs = (app.GetConfigurationNames(path) as object[] ?? new object[0]).OfType<string>().ToArray();
+            config = configs.FirstOrDefault(c => c.StartsWith("1.5", StringComparison.Ordinal)) ?? configs.FirstOrDefault() ?? "";
+            return path;
+        }
+
+        /// <summary>A 3D sketch of lines and one structural member feature on them, renamed to <paramref name="name"/>.</summary>
+        private static IFeature AddMembers(IModelDoc2 doc, string profile, string config, string name, (Vec3 A, Vec3 B)[] lines)
+        {
+            doc.ClearSelection2(true);
+            ISketchManager sm = doc.SketchManager;
+            sm.Insert3DSketch(true);
+            bool addToDb = sm.AddToDB;
+            sm.AddToDB = true;
+            var segments = new List<SketchSegment>();
+            foreach ((Vec3 a, Vec3 b) in lines)
+            {
+                segments.Add((SketchSegment)sm.CreateLine(a.X, a.Y, a.Z, b.X, b.Y, b.Z));
+            }
+            sm.AddToDB = addToDb;
+            sm.Insert3DSketch(true);
+
+            IFeatureManager fm = doc.FeatureManager;
+            StructuralMemberGroup group = fm.CreateStructuralMemberGroup();
+            group.Segments = segments.ToArray();
+            IFeature f = fm.InsertStructuralWeldment5(profile,
+                (int)swConnectedSegmentsOption_e.swConnectedSegments_SimpleCut, false,
+                new[] { group }, config);
+            if (f != null)
+            {
+                f.Name = name;
+            }
+            doc.ClearSelection2(true);
+            return f;
         }
 
         // ---- Add-in config (issue #9) ----
