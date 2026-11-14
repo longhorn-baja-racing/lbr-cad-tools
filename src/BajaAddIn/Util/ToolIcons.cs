@@ -23,6 +23,7 @@ namespace Lbr.CadTools.AddIn.Util
         NameCheck,
         Notcher,
         Drawings,
+        SuspensionSweep,
     }
 
     /// <summary>
@@ -80,6 +81,7 @@ namespace Lbr.CadTools.AddIn.Util
                         case ToolIcon.NameCheck: NameTag(p); break;
                         case ToolIcon.Notcher: Cope(p); break;
                         case ToolIcon.Drawings: DrawingSheet(p); break;
+                        case ToolIcon.SuspensionSweep: Curve(p); break;
                     }
                 }
             }
@@ -366,6 +368,25 @@ namespace Lbr.CadTools.AddIn.Util
             // Cross tube with its bore, a small gap inside the bite.
             p.Circle(p.Ink, cx, cy, bite - 5);
             p.Circle(p.Cut, cx, cy, bite - 13);
+        }
+
+        /// <summary>Chart axes with a camber curve through three data points.</summary>
+        private static void Curve(Painter p)
+        {
+            using (Pen axes = p.InkPen(7))
+            {
+                p.G.DrawLines(axes, new[] { new PointF(18, 16), new PointF(18, 82), new PointF(86, 82) });
+            }
+            var pts = new[] { new PointF(28, 30), new PointF(50, 46), new PointF(76, 70) };
+            using (Pen curve = p.InkPen(6))
+            {
+                p.G.DrawCurve(curve, new[] { new PointF(26, 26), pts[0], pts[1], pts[2], new PointF(80, 74) }, 0.5f);
+            }
+            foreach (PointF pt in pts)
+            {
+                p.Circle(p.Cut, pt.X, pt.Y, 8);
+                p.Circle(p.Ink, pt.X, pt.Y, 5.5f);
+            }
         }
 
         /// <summary>Landscape drawing sheet: two views and a title block in the corner.</summary>

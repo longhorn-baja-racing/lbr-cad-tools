@@ -32,6 +32,7 @@ The tab is split into sections, each with its own icon color. The same tools are
 | Button | What it does |
 |---|---|
 | **Batch Export** | Exports the active part, assembly (plus every unique component and their drawings), or drawing to STEP AP214, IGES, Parasolid, STL, PDF, DXF, and sheet metal flat pattern DXF. Files are named by part number. For large unattended folder jobs, the built-in SolidWorks Task Scheduler "Export Files" task also works. |
+| **Suspension Sweep** (Dynamics) | Click the dimension that moves the suspension (shock length, arm angle, mate distance) and give a range: steps it, rebuilds, and records camber, toe, caster, KPI, scrub, and trail from the HP_ points at each step. Shows camber gain and bump steer per inch of wheel travel, charts camber and toe over travel, and saves CSV. The dimension is put back afterwards. |
 | **Tube Notcher** (Chassis) | Copes every tube of a weldment frame (structural members) to fit the tubes it meets. A tube that ends on the side of another is coped; where several tubes end at one node, the member group priority decides (default LFS > RRH > RHO > FBM > SIM > ... > SM, by feature name), with per-joint swaps. Makes named Trim/Extend features in the right order and replaces them on re-run; the order is saved in the part. |
 | **Name Check** | Checks the open document and every file an assembly uses against the team naming convention `[a\|d][TEAM]_####_[PartName]_REV##_V##` (e.g. `aDYN_0006_ControlArmLeft_REV01_V02`): wrong prefix, unknown team, a number used twice, parts on a different REV than the assembly. Shows the next free number per team and builds correct names to copy. Never renames files. Team codes are in [Settings](#settings). |
 | **Make Drawings** | Starts a drawing for the open part, or an assembly and every part in it: front, top, right (third angle) and isometric views at a standard scale that fits the sheet, centered above the title block, with PartNo, Description, Revision, and Version filled in from the file name and the part's dimensions imported. Saved next to the model as `d` + its name; existing drawings are kept unless you choose Replace. Uses the default drawing template. |
@@ -50,7 +51,7 @@ Already built into SolidWorks, so not planned: Hide All Sketches, Merge Sketches
 
 | Tool | Status |
 |---|---|
-| Dynamics: live Suspension Monitor | Suspension Check in a Task Pane that updates while you drag (#12); point names to be agreed with Dynamics |
+| Dynamics: live Suspension Monitor | Suspension Check in a Task Pane that updates while you drag (#12); the travel sweep is done, point names still to be agreed with Dynamics |
 | Surface Copier | Waiting to hear what Offset Surface at 0 distance is missing (#10) |
 
 See `docs/PLAN.md` for the API approach per feature, and the GitHub issues for details and decisions.

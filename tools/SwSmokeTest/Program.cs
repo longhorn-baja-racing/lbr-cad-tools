@@ -245,6 +245,7 @@ namespace Lbr.CadTools.SmokeTest
                 Run("tab", () => TabTest(app));
                 Run("tabinsert", () => TabInsertTest(app, dir));
                 Run("suspension", () => SuspensionTest(app, dir));
+                Run("sweep", () => SweepTest(app, dir));
                 Run("naming", () => NameCheckTest(app, dir));
                 Run("notcher", () => NotcherTest(app, dir));
                 Run("drawings", () => DrawingsTest(app, dir));
@@ -1165,6 +1166,134 @@ namespace Lbr.CadTools.SmokeTest
                 null, null, ref errors, ref warnings);
             Check(File.Exists(pdf), "PDF of the drawing written");
             app.CloseDoc(path);
+        }
+
+        // ---- Suspension travel sweep (issue #12) ----
+
+        private static void SweepTest(ISldWorks app, string dir)
+        {
+            Step("Sweep: upright swung by a sketch angle, HP_ points on the sketch");
+            const double deg = Math.PI / 180;
+            const int inputDim = (int)swUserPreferenceToggle_e.swInputDimValOnCreate;
+            bool inputDimSetting = app.GetUserPreferenceToggle(inputDim);
+            app.SetUserPreferenceToggle(inputDim, false); // no value prompt while dimensioning
+            try
+            {
+                IModelDoc2 part = NewPart(app);
+                Planes(part).First().Select2(false, 0); // Front plane: sketch X = model X (left), Y = model Y (up)
+                ISketchManager sm = part.SketchManager;
+                sm.InsertSketch(true);
+                sm.AddToDB = true;
+                var ground = (ISketchSegment)sm.CreateLine(0, 0, 0, 0.1, 0, 0);
+                var upright = (ISketchSegment)sm.CreateLine(0, 0, 0, -0.04, 0.22, 0);
+                var spindle = (ISketchSegment)sm.CreateLine(-0.02, 0.11, 0, 0.078, 0.128, 0);
+                sm.AddToDB = false;
+
+                void Relate(string relation, params object[] picks)
+                {
+                    part.ClearSelection2(true);
+                    foreach (object o in picks)
+                    {
+                        if (o is ISketchSegment s)
+                        {
+                            s.Select4(true, null);
+                        }
+                        else
+                        {
+                            ((ISketchPoint)o).Select4(true, null);
+                        }
+                    }
+                    part.SketchAddConstraints(relation);
+                }
+                IDimension Dimension(double x, double y, double value, params ISketchSegment[] picks)
+                {
+                    part.ClearSelection2(true);
+                    foreach (ISketchSegment s in picks)
+                    {
+                        s.Select4(true, null);
+                    }
+                    var dd = (IDisplayDimension)part.AddDimension2(x, y, 0);
+                    IDimension d = dd?.GetDimension2(0);
+                    d?.SetSystemValue3(value, (int)swSetValueInConfiguration_e.swSetValue_InThisConfiguration, null);
+                    return d;
+                }
+                ISketchPoint Start(ISketchSegment s) => (ISketchPoint)((ISketchLine)s).GetStartPoint2();
+                ISketchPoint End(ISketchSegment s) => (ISketchPoint)((ISketchLine)s).GetEndPoint2();
+
+                Relate("sgFIXED", ground);
+                Relate("sgMERGEPOINTS", Start(ground), Start(upright));
+                Relate("sgATMIDDLE", Start(spindle), upright);
+                Relate("sgPERPENDICULAR", spindle, upright);
+                Dimension(-0.08, 0.1, 0.22, upright);
+                Dimension(0.05, 0.2, 0.10, spindle);
+                IDimension angle = Dimension(0.03, 0.05, 100 * deg, ground, upright);
+                part.ClearSelection2(true);
+                sm.InsertSketch(true);
+                Check(angle != null, "angle dimension made");
+                if (angle == null)
+                {
+                    return;
+                }
+
+                // Reference points on the sketch points, named for the front left corner.
+                var sketch = (ISketch)((IFeature)part.FeatureByPositionReverse(0)).GetSpecificFeature2();
+                int named = 0;
+                foreach ((ISketchPoint pt, string name) in new[]
+                {
+                    (Start(upright), "HP_LBJ_FL"), (End(upright), "HP_UBJ_FL"), (Start(spindle), "HP_SA_FL"), (End(spindle), "HP_WC_FL"),
+                })
+                {
+                    part.ClearSelection2(true);
+                    pt.Select4(false, null);
+                    object created = part.FeatureManager.InsertReferencePoint((int)swRefPointType_e.swRefPointSketchPoint, 0, 0, 1);
+                    if (created != null && part.FeatureByPositionReverse(0) is IFeature f && f.GetTypeName2() == "RefPoint")
+                    {
+                        f.Name = name;
+                        named++;
+                    }
+                }
+                part.ClearSelection2(true);
+                Check(named == 4, $"4 hardpoints named (got {named})");
+                Save(part, Path.Combine(dir, "Sweep Upright.SLDPRT"));
+
+                SuspensionSweeper.Driver driver = SuspensionSweeper.FromDimension(angle);
+                Check(driver != null && driver.Angular && Math.Abs(driver.Start - 100 * deg) < 1e-9, $"driver read: {driver?.Name}, angular");
+                List<double> values = SuspensionSweep.Values(90 * deg, 110 * deg, 5);
+                var settings = new SuspensionSettings();
+                SuspensionSweeper.Result r = SuspensionSweeper.Run(app, part, driver, values, settings);
+                r.Problems.ForEach(p => Console.WriteLine("  problem: " + p));
+                Check(r.Steps.Count == 5 && r.Reference.Count == 1, $"5 steps of 1 corner (got {r.Steps.Count})");
+                if (r.Steps.Count != 5)
+                {
+                    return;
+                }
+                CornerGeometry start = r.Reference[0];
+                foreach (SweepStep s in r.Steps)
+                {
+                    CornerGeometry g = s.Corners[0];
+                    Console.WriteLine($"  angle {s.Driver / deg:F1}: camber {g.Camber:F3}, KPI {g.Kpi:F3}, toe {g.Toe:F3}, " +
+                                      $"travel {SuspensionSweep.Travel(g, r.Reference) * 1000:F2} mm");
+                }
+                bool exact = r.Steps.All(s =>
+                {
+                    double turn = (s.Driver - driver.Start) / deg;
+                    CornerGeometry g = s.Corners[0];
+                    return Math.Abs(g.Camber - (start.Camber - turn)) < 1e-6 && Math.Abs(g.Kpi - (start.Kpi + turn)) < 1e-6 && Math.Abs(g.Toe) < 1e-6;
+                });
+                Check(exact, "camber changes by minus the turn, KPI by plus the turn, toe stays 0");
+                var now = (double[])angle.GetSystemValue3((int)swInConfigurationOpts_e.swThisConfiguration, null);
+                Check(Math.Abs(now[0] - 100 * deg) < 1e-9, "angle back to 100 deg after the sweep");
+                SweepSummary sum = SuspensionSweep.Summarize(r.Steps, r.Reference).Single();
+                Console.WriteLine($"  camber gain {sum.CamberGainPerInch:F3} deg/in, bump steer {sum.BumpSteerPerInch:F4} deg/in, " +
+                                  $"travel {sum.TravelMin * 1000:F1} to {sum.TravelMax * 1000:F1} mm");
+                Check(Math.Abs(sum.BumpSteerPerInch) < 1e-6 && sum.TravelMax > sum.TravelMin, "summary: travel range, no bump steer");
+                string csv = SuspensionSweep.Csv(r.Steps, r.Reference, driver.Name, "deg", v => v / deg);
+                Check(csv.Split('\n').Count(l => l.Trim().Length > 0) == 6, "CSV has a header and 5 rows");
+            }
+            finally
+            {
+                app.SetUserPreferenceToggle(inputDim, inputDimSetting);
+            }
         }
 
         // ---- Add-in config (issue #9) ----
