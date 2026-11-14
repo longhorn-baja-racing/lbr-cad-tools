@@ -72,6 +72,8 @@ namespace Lbr.CadTools.SmokeTest
             // --only=<name>[,<name>] runs just those tests (names as in the Run calls below).
             string only = args.FirstOrDefault(a => a.StartsWith("--only="))?.Substring("--only=".Length);
             bool Want(string name) => only == null || only.Split(',').Contains(name, StringComparer.OrdinalIgnoreCase);
+            // --inject=<name>:once|always adds a failure to a test group, to check the retry logic.
+            string[] inject = args.FirstOrDefault(a => a.StartsWith("--inject="))?.Substring("--inject=".Length).Split(':');
 
             if (Process.GetProcessesByName("SLDWORKS").Length > 0)
             {
@@ -111,47 +113,141 @@ namespace Lbr.CadTools.SmokeTest
 
             ISldWorks app = null;
             var clock = Stopwatch.StartNew();
+            const int beginAssembly = (int)swUserPreferenceToggle_e.swInsertComponentForNewAssembly;
+            bool? beginAssemblySetting = null;
+            var flaky = new List<string>();
+
+            ISldWorks Start()
+            {
+                var started = Stopwatch.StartNew();
+                var sw = (ISldWorks)Activator.CreateInstance(Type.GetTypeFromProgID("SldWorks.Application"));
+                sw.Visible = visible;
+                Console.WriteLine($"  SolidWorks {sw.RevisionNumber()}, started in {started.Elapsed.TotalSeconds:F0} s");
+                // A visible new assembly opens the Insert Component panel. Turn
+                // that off for the run, then restore the user's setting.
+                if (beginAssemblySetting == null)
+                {
+                    beginAssemblySetting = sw.GetUserPreferenceToggle(beginAssembly);
+                }
+                sw.SetUserPreferenceToggle(beginAssembly, false);
+                return sw;
+            }
+
+            // Only this test's SolidWorks can be running (checked at startup), so it is safe to end it.
+            void Stop(int waitSeconds)
+            {
+                if (app == null)
+                {
+                    return;
+                }
+                try
+                {
+                    if (beginAssemblySetting != null)
+                    {
+                        app.SetUserPreferenceToggle(beginAssembly, beginAssemblySetting.Value);
+                    }
+                    app.CloseAllDocuments(true);
+                    app.ExitApp();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("  ExitApp: " + ex.Message);
+                }
+                try
+                {
+                    Marshal.FinalReleaseComObject(app);
+                }
+                catch (Exception)
+                {
+                }
+                app = null;
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+
+                // An automated instance often hangs on exit.
+                foreach (Process p in Process.GetProcessesByName("SLDWORKS"))
+                {
+                    if (!p.WaitForExit(waitSeconds * 1000))
+                    {
+                        Console.WriteLine($"  SolidWorks (pid {p.Id}) did not exit; killing it");
+                        p.Kill();
+                        p.WaitForExit(10000);
+                    }
+                }
+            }
+
+            void Attempt(string name, bool retry, Action test)
+            {
+                try
+                {
+                    test();
+                    if (inject != null && inject[0] == name && (!retry || (inject.Length > 1 && inject[1] == "always")))
+                    {
+                        Fail("injected failure (--inject)");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Fail("Unexpected exception: " + ex);
+                }
+                try
+                {
+                    CloseAll(app);
+                }
+                catch (Exception ex)
+                {
+                    Fail("Closing documents: " + ex.Message);
+                }
+            }
+
+            // A long session sometimes faults (RPC_E_SERVERFAULT, issue #37). A test group
+            // that fails is retried once in a fresh SolidWorks: a real bug fails again,
+            // a flake passes and is listed at the end.
+            void Run(string name, Action test)
+            {
+                if (!Want(name))
+                {
+                    return;
+                }
+                watchdog.Change(TimeSpan.FromMinutes(WatchdogMinutes), System.Threading.Timeout.InfiniteTimeSpan);
+                int before = failures;
+                Attempt(name, false, test);
+                if (failures == before)
+                {
+                    return;
+                }
+                int firstTry = failures - before;
+                Step($"{name}: {firstTry} failure(s); retrying once in a fresh SolidWorks");
+                Stop(waitSeconds: 5);
+                watchdog.Change(TimeSpan.FromMinutes(WatchdogMinutes), System.Threading.Timeout.InfiniteTimeSpan);
+                app = Start();
+                failures = before;
+                Attempt(name, true, test);
+                if (failures == before)
+                {
+                    flaky.Add(name);
+                    Console.WriteLine($"  {name} passed on retry");
+                }
+            }
+
             try
             {
                 Step(visible ? "Starting SolidWorks (visible; do not click in it)" : "Starting SolidWorks (hidden)");
-                app = (ISldWorks)Activator.CreateInstance(Type.GetTypeFromProgID("SldWorks.Application"));
-                app.Visible = visible;
-                Console.WriteLine($"  SolidWorks {app.RevisionNumber()}, started in {clock.Elapsed.TotalSeconds:F0} s");
-
-                // A visible new assembly opens the Insert Component panel. Turn
-                // that off for the run, then restore the user's setting.
-                const int beginAssembly = (int)swUserPreferenceToggle_e.swInsertComponentForNewAssembly;
-                bool beginAssemblySetting = app.GetUserPreferenceToggle(beginAssembly);
-                app.SetUserPreferenceToggle(beginAssembly, false);
-                try
+                app = Start();
+                Run("fix", () => FixComponentsTest(app, dir, keep));
+                Run("points", () => SketchPointsTest(app, dir, keep));
+                Run("export", () => BatchExportTest(app, dir));
+                Run("autosave", () =>
                 {
-                    void Run(string name, Action test)
-                    {
-                        if (Want(name))
-                        {
-                            test();
-                            CloseAll(app);
-                        }
-                    }
-                    Run("fix", () => FixComponentsTest(app, dir, keep));
-                    Run("points", () => SketchPointsTest(app, dir, keep));
-                    Run("export", () => BatchExportTest(app, dir));
-                    Run("autosave", () =>
-                    {
-                        AutoSaveTest(app, dir);
-                        AddInConfigTest(app);
-                    });
-                    Run("tab", () => TabTest(app));
-                    Run("tabinsert", () => TabInsertTest(app, dir));
-                    Run("suspension", () => SuspensionTest(app, dir));
-                    Run("naming", () => NameCheckTest(app, dir));
-                    Run("notcher", () => NotcherTest(app, dir));
-                    Run("drawings", () => DrawingsTest(app, dir));
-                }
-                finally
-                {
-                    app.SetUserPreferenceToggle(beginAssembly, beginAssemblySetting);
-                }
+                    AutoSaveTest(app, dir);
+                    AddInConfigTest(app);
+                });
+                Run("tab", () => TabTest(app));
+                Run("tabinsert", () => TabInsertTest(app, dir));
+                Run("suspension", () => SuspensionTest(app, dir));
+                Run("naming", () => NameCheckTest(app, dir));
+                Run("notcher", () => NotcherTest(app, dir));
+                Run("drawings", () => DrawingsTest(app, dir));
             }
             catch (Exception ex)
             {
@@ -162,31 +258,7 @@ namespace Lbr.CadTools.SmokeTest
                 if (app != null)
                 {
                     Step("Closing SolidWorks");
-                    try
-                    {
-                        app.CloseAllDocuments(true);
-                        app.ExitApp();
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("  ExitApp: " + ex.Message);
-                    }
-                    Marshal.FinalReleaseComObject(app);
-                    app = null;
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-
-                    // An automated instance often hangs on exit. Only this test's
-                    // instance can be running here (checked at startup).
-                    foreach (Process p in Process.GetProcessesByName("SLDWORKS"))
-                    {
-                        if (!p.WaitForExit(30000))
-                        {
-                            Console.WriteLine($"  SolidWorks (pid {p.Id}) did not exit; killing it");
-                            p.Kill();
-                            p.WaitForExit(10000);
-                        }
-                    }
+                    Stop(waitSeconds: 30);
                 }
                 if (keep)
                 {
@@ -208,7 +280,7 @@ namespace Lbr.CadTools.SmokeTest
             watchdog.Dispose();
             Console.WriteLine();
             Console.WriteLine(failures == 0
-                ? $"PASS ({clock.Elapsed.TotalSeconds:F0} s)"
+                ? $"PASS ({clock.Elapsed.TotalSeconds:F0} s)" + (flaky.Count > 0 ? $"; passed on retry in a fresh SolidWorks: {string.Join(", ", flaky)} (#37)" : "")
                 : $"FAIL: {failures} check(s) failed");
             return failures == 0 ? 0 : 1;
         }
