@@ -35,6 +35,13 @@ namespace Lbr.CadTools.Core
         public double TireRadiusInches { get; set; } = 11.5;
     }
 
+    public sealed class NamingSettings
+    {
+        /// <summary>Team code (3 capital letters) to team name, for file names like CHA_0001_Frame_REV01_V01.</summary>
+        public SortedDictionary<string, string> Teams { get; } =
+            new SortedDictionary<string, string>(NamingConvention.DefaultTeams.ToDictionary(p => p.Key, p => p.Value), StringComparer.Ordinal);
+    }
+
     /// <summary>
     /// The add-in settings file (settings.json). Reading is forgiving: a bad or
     /// missing value falls back to its default with a warning, and sections
@@ -47,6 +54,8 @@ namespace Lbr.CadTools.Core
         public AutoSaveSettings AutoSave { get; } = new AutoSaveSettings();
 
         public SuspensionSettings Suspension { get; } = new SuspensionSettings();
+
+        public NamingSettings Naming { get; } = new NamingSettings();
 
         /// <summary>Titles of LBR CAD Tools buttons to leave off the tab (applies at the next SolidWorks start).</summary>
         public List<string> HiddenCommands { get; } = new List<string>();
@@ -83,6 +92,12 @@ namespace Lbr.CadTools.Core
                         if (Section(pair.Value, "suspension", warnings) is Dictionary<string, object> suspension)
                         {
                             ReadSuspension(suspension, settings.Suspension, warnings);
+                        }
+                        break;
+                    case "naming":
+                        if (Section(pair.Value, "naming", warnings) is Dictionary<string, object> naming)
+                        {
+                            ReadNaming(naming, settings.Naming, warnings);
                         }
                         break;
                     case "commands":
@@ -184,6 +199,41 @@ namespace Lbr.CadTools.Core
             }
         }
 
+        private static void ReadNaming(Dictionary<string, object> obj, NamingSettings target, List<string> warnings)
+        {
+            if (!obj.TryGetValue("teams", out object value) || value == null)
+            {
+                return;
+            }
+            if (!(value is Dictionary<string, object> teams))
+            {
+                warnings.Add("\"naming.teams\" must be an object like { \"CHA\": \"Chassis\" }; using the default teams.");
+                return;
+            }
+            var read = new SortedDictionary<string, string>(StringComparer.Ordinal);
+            foreach (KeyValuePair<string, object> team in teams)
+            {
+                if (team.Key.Length == 3 && team.Key.All(c => c >= 'A' && c <= 'Z'))
+                {
+                    read[team.Key] = team.Value as string ?? "";
+                }
+                else
+                {
+                    warnings.Add($"\"naming.teams\": \"{team.Key}\" is not a 3-capital-letter team code; skipped.");
+                }
+            }
+            if (read.Count == 0)
+            {
+                warnings.Add("\"naming.teams\" has no valid team codes; using the default teams.");
+                return;
+            }
+            target.Teams.Clear();
+            foreach (KeyValuePair<string, string> team in read)
+            {
+                target.Teams[team.Key] = team.Value;
+            }
+        }
+
         private static void ReadAutoSave(object value, AutoSaveSettings target, List<string> warnings)
         {
             if (!(value is Dictionary<string, object> obj))
@@ -232,6 +282,10 @@ namespace Lbr.CadTools.Core
                     ["forwardAxis"] = Suspension.ForwardAxis,
                     ["upAxis"] = Suspension.UpAxis,
                     ["tireRadiusInches"] = Suspension.TireRadiusInches,
+                },
+                ["naming"] = new Dictionary<string, object>
+                {
+                    ["teams"] = Naming.Teams.ToDictionary(p => p.Key, p => (object)p.Value),
                 },
                 ["commands"] = new Dictionary<string, object>
                 {
