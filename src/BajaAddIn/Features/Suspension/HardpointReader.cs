@@ -23,13 +23,61 @@ namespace Lbr.CadTools.AddIn.Features.Suspension
             public List<string> Problems { get; } = new List<string>();
         }
 
-        public static Result Read(ISldWorks app, IModelDoc2 doc)
+        /// <summary>One HP_ reference point found in the model, kept so its position can be re-read cheaply.</summary>
+        internal sealed class Tracked
+        {
+            public string Name { get; set; }
+
+            public IRefPoint Point { get; set; }
+
+            /// <summary>The component holding it, or null when it is in the document itself.</summary>
+            public IComponent2 Component { get; set; }
+
+            public string Source { get; set; }
+        }
+
+        /// <summary>The HP_ points found once by <see cref="Find"/>, plus problems found while looking.</summary>
+        internal sealed class Found
+        {
+            public List<Tracked> Points { get; } = new List<Tracked>();
+
+            public List<string> Problems { get; } = new List<string>();
+        }
+
+        public static Result Read(ISldWorks app, IModelDoc2 doc) => Evaluate(Find(doc));
+
+        /// <summary>
+        /// Positions of points found earlier, in model coordinates, using each
+        /// component's current transform. Cheap enough to call while dragging.
+        /// </summary>
+        public static Result Evaluate(Found found)
         {
             var result = new Result();
-            var math = (IMathUtility)app.GetMathUtility();
+            result.Problems.AddRange(found.Problems);
+            foreach (Tracked t in found.Points)
+            {
+                if (!(t.Point.GetRefPoint() is IMathPoint mp))
+                {
+                    result.Problems.Add($"{t.Name} in {t.Source}: could not read its position.");
+                    continue;
+                }
+                if (t.Component != null)
+                {
+                    mp = (IMathPoint)mp.MultiplyTransform(t.Component.Transform2);
+                }
+                var xyz = (double[])mp.ArrayData;
+                result.Points[t.Name] = new Vec3(xyz[0], xyz[1], xyz[2]);
+            }
+            return result;
+        }
+
+        /// <summary>Finds every HP_ reference point in the document and its components (the slow part).</summary>
+        public static Found Find(IModelDoc2 doc)
+        {
+            var result = new Found();
             var where = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            void Collect(IModelDoc2 model, MathTransform toAssembly, string source)
+            void Collect(IModelDoc2 model, IComponent2 component, string source)
             {
                 foreach (IFeature f in ((model.FeatureManager.GetFeatures(false) as object[]) ?? new object[0]).OfType<IFeature>())
                 {
@@ -50,16 +98,11 @@ namespace Lbr.CadTools.AddIn.Features.Suspension
                     {
                         continue;
                     }
-                    if (!(f.GetSpecificFeature2() is IRefPoint refPoint) || !(refPoint.GetRefPoint() is IMathPoint mp))
+                    if (!(f.GetSpecificFeature2() is IRefPoint refPoint))
                     {
                         result.Problems.Add($"{name} in {source}: could not read its position.");
                         continue;
                     }
-                    if (toAssembly != null)
-                    {
-                        mp = (IMathPoint)mp.MultiplyTransform(toAssembly);
-                    }
-                    var xyz = (double[])mp.ArrayData;
                     if (where.TryGetValue(name, out string first))
                     {
                         result.Problems.Add($"{name} is in both {first} and {source}; using the first. " +
@@ -67,7 +110,7 @@ namespace Lbr.CadTools.AddIn.Features.Suspension
                         continue;
                     }
                     where[name] = source;
-                    result.Points[name] = new Vec3(xyz[0], xyz[1], xyz[2]);
+                    result.Points.Add(new Tracked { Name = name, Point = refPoint, Component = component, Source = source });
                 }
             }
 
@@ -81,7 +124,7 @@ namespace Lbr.CadTools.AddIn.Features.Suspension
                     {
                         continue;
                     }
-                    Collect(model, c.Transform2, c.Name2);
+                    Collect(model, c, c.Name2);
                 }
             }
             return result;

@@ -76,6 +76,7 @@ namespace Lbr.CadTools.AddIn
             new NotcherCommand(),
             new DrawingsCommand(),
             new SweepCommand(),
+            new MonitorCommand(),
         };
 
         /// <summary>All commands minus those hidden in settings.json. Settings can never be hidden.</summary>

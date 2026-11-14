@@ -24,6 +24,7 @@ namespace Lbr.CadTools.AddIn.Util
         Notcher,
         Drawings,
         SuspensionSweep,
+        SuspensionMonitor,
     }
 
     /// <summary>
@@ -82,6 +83,7 @@ namespace Lbr.CadTools.AddIn.Util
                         case ToolIcon.Notcher: Cope(p); break;
                         case ToolIcon.Drawings: DrawingSheet(p); break;
                         case ToolIcon.SuspensionSweep: Curve(p); break;
+                        case ToolIcon.SuspensionMonitor: Gauge(p); break;
                     }
                 }
             }
@@ -368,6 +370,31 @@ namespace Lbr.CadTools.AddIn.Util
             // Cross tube with its bore, a small gap inside the bite.
             p.Circle(p.Ink, cx, cy, bite - 5);
             p.Circle(p.Cut, cx, cy, bite - 13);
+        }
+
+        /// <summary>Dial gauge: an arc with ticks and a needle, for live readings.</summary>
+        private static void Gauge(Painter p)
+        {
+            const float cx = 50, cy = 62, r = 34;
+            using (Pen arc = p.InkPen(9))
+            {
+                arc.StartCap = arc.EndCap = LineCap.Flat;
+                p.G.DrawArc(arc, cx - r, cy - r, 2 * r, 2 * r, 180, 180);
+            }
+            using (Pen tick = p.CutPen(4))
+            {
+                foreach (float a in new[] { 215f, 250f, 290f, 325f })
+                {
+                    PointF outer = OnCircle(cx, cy, r + 5, a), inner = OnCircle(cx, cy, r - 5, a);
+                    p.G.DrawLine(tick, inner, outer);
+                }
+            }
+            using (Pen needle = p.InkPen(7))
+            {
+                p.G.DrawLine(needle, new PointF(cx, cy), OnCircle(cx, cy, r - 10, 300));
+            }
+            p.Circle(p.Ink, cx, cy, 8);
+            p.G.FillRectangle(p.Ink, 16, 76, 68, 7); // base
         }
 
         /// <summary>Chart axes with a camber curve through three data points.</summary>
