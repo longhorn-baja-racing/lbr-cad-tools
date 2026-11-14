@@ -32,6 +32,7 @@ The tab is split into sections, each with its own icon color. The same tools are
 | Button | What it does |
 |---|---|
 | **Batch Export** | Exports the active part, assembly (plus every unique component and their drawings), or drawing to STEP AP214, IGES, Parasolid, STL, PDF, DXF, and sheet metal flat pattern DXF. Files are named by part number. For large unattended folder jobs, the built-in SolidWorks Task Scheduler "Export Files" task also works. |
+| **Tube Notcher** (Chassis) | Copes every tube of a weldment frame (structural members) to fit the tubes it meets. A tube that ends on the side of another is coped; where several tubes end at one node, the member group priority decides (default LFS > RRH > RHO > FBM > SIM > ... > SM, by feature name), with per-joint swaps. Makes named Trim/Extend features in the right order and replaces them on re-run; the order is saved in the part. |
 | **Name Check** | Checks the open document and every file an assembly uses against the team naming convention `[a\|d][TEAM]_####_[PartName]_REV##_V##` (e.g. `aDYN_0006_ControlArmLeft_REV01_V02`): wrong prefix, unknown team, a number used twice, parts on a different REV than the assembly. Shows the next free number per team and builds correct names to copy. Never renames files. Team codes are in [Settings](#settings). |
 | **Auto-Save** | Saves modified documents on a timer (SolidWorks Auto-recover only writes recovery copies). Skips never-saved and read-only files, and waits while a command or sketch is open. |
 
@@ -48,7 +49,6 @@ Already built into SolidWorks, so not planned: Hide All Sketches, Merge Sketches
 
 | Tool | Status |
 |---|---|
-| Chassis: Ordered Tube Notcher | Next up; the frame uses weldment structural members (#11) |
 | Dynamics: live Suspension Monitor | Suspension Check in a Task Pane that updates while you drag (#12); point names to be agreed with Dynamics |
 | Surface Copier | Waiting to hear what Offset Surface at 0 distance is missing (#10) |
 | Manufacturing: Auto Drawing Generator | Flat pattern DXFs are in Batch Export; drawings are a stretch goal (#13) |
