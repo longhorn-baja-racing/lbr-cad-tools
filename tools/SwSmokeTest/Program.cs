@@ -67,6 +67,9 @@ namespace Lbr.CadTools.SmokeTest
         {
             bool visible = args.Contains("--visible");
             bool keep = args.Contains("--keep");
+            // --only=<name>[,<name>] runs just those tests (names as in the Run calls below).
+            string only = args.FirstOrDefault(a => a.StartsWith("--only="))?.Substring("--only=".Length);
+            bool Want(string name) => only == null || only.Split(',').Contains(name, StringComparer.OrdinalIgnoreCase);
 
             if (Process.GetProcessesByName("SLDWORKS").Length > 0)
             {
@@ -120,20 +123,26 @@ namespace Lbr.CadTools.SmokeTest
                 app.SetUserPreferenceToggle(beginAssembly, false);
                 try
                 {
-                    FixComponentsTest(app, dir, keep);
-                    CloseAll(app);
-                    SketchPointsTest(app, dir, keep);
-                    CloseAll(app);
-                    BatchExportTest(app, dir);
-                    CloseAll(app);
-                    AutoSaveTest(app, dir);
-                    AddInConfigTest(app);
-                    CloseAll(app);
-                    TabTest(app);
-                    CloseAll(app);
-                    SuspensionTest(app, dir);
-                    CloseAll(app);
-                    NameCheckTest(app, dir);
+                    void Run(string name, Action test)
+                    {
+                        if (Want(name))
+                        {
+                            test();
+                            CloseAll(app);
+                        }
+                    }
+                    Run("fix", () => FixComponentsTest(app, dir, keep));
+                    Run("points", () => SketchPointsTest(app, dir, keep));
+                    Run("export", () => BatchExportTest(app, dir));
+                    Run("autosave", () =>
+                    {
+                        AutoSaveTest(app, dir);
+                        AddInConfigTest(app);
+                    });
+                    Run("tab", () => TabTest(app));
+                    Run("tabinsert", () => TabInsertTest(app, dir));
+                    Run("suspension", () => SuspensionTest(app, dir));
+                    Run("naming", () => NameCheckTest(app, dir));
                 }
                 finally
                 {
@@ -683,6 +692,162 @@ namespace Lbr.CadTools.SmokeTest
             Check(checks.Count(c => !c.Ok) == 2, "only those two need fixing");
             Check(NamingConvention.NextNumber("CHA", scan.AllNames) == 41, "next CHA number counts the Old folder (0041)");
             Check(NamingConvention.NextNumber("ERG", scan.AllNames) == 6, "next ERG number is 0006");
+        }
+
+        // ---- Mounting tab inserted on a tube (issue #35) ----
+
+        private static void TabInsertTest(ISldWorks app, string dir)
+        {
+            const double inch = Units.MetersPerInch;
+            const double r = 0.5 * inch;
+
+            // Round tube: built along part Z, then turned so its axis runs along assembly X,
+            // centered on (0, y0, z0). The offset and the rotation check the transforms.
+            const double y0 = 0.10, z0 = -0.05, length = 0.30;
+            string tubePath = CreateTubePart(app, dir, "Tube", r, length);
+            IModelDoc2 asm = NewAssembly(app);
+            IComponent2 tube = AddComponent(asm, tubePath, 0);
+            var mu = (IMathUtility)app.GetMathUtility();
+            // Part Z -> assembly X, part X -> assembly Y, part Y -> assembly Z.
+            tube.Transform2 = (MathTransform)mu.CreateTransform(new double[]
+            {
+                0, 1, 0,  0, 0, 1,  1, 0, 0,
+                -length / 2, y0, z0,
+                1, 0, 0, 0,
+            });
+            Save(asm, Path.Combine(dir, "Tab Insert.SLDASM"));
+
+            Step("Tab insert: round tube, single seat tab along the tube");
+            const double pickX = 0.04;
+            TabMount m = PickFace(app, asm, pickX, y0 + r, z0);
+            Check(m != null && m.IsRound, "picked face read as a round tube");
+            if (m == null)
+            {
+                return;
+            }
+            Check(Math.Abs(m.Radius - r) < 1e-6, $"radius {m.Radius / inch:0.####} in");
+            Check(Math.Abs(Math.Abs(m.Axis.X) - 1) < 1e-6, $"axis along assembly X ({m.Axis.X:F3}, {m.Axis.Y:F3}, {m.Axis.Z:F3})");
+            Check(Math.Abs(m.PickDistanceFromAxis() - r) < 1e-5, $"pick lies on the tube surface ({m.PickDistanceFromAxis():F5})");
+
+            TabInputs seat = TabInputs.Defaults(TabUse.Seat);
+            seat.DoubleShear = false;
+            seat.TubeDiameter = 2 * r;
+            IComponent2 tab = InsertTab(app, asm, seat, m, TabOrientation.AlongTube);
+            // GetBox is padded, so check exact points through the component transform. The
+            // recorded pick is a little off the requested point, like a real click.
+            Vec3 axisFoot = new Vec3(m.Pick.X, y0, z0);
+            Vec3 up = (m.Pick - axisFoot).Unit();
+            Vec3 baseMid = axisFoot + up * r;
+            Check(Maps(app, tab, new Vec3(0, 0, seat.Thickness / 2), baseMid), "base middle on the tube surface under the click");
+            Check(Maps(app, tab, new Vec3(seat.BaseWidth / 2, 0, seat.Thickness / 2), baseMid + m.Axis * (seat.BaseWidth / 2)), "base runs along the tube axis");
+            Check(Maps(app, tab, new Vec3(0, seat.Length, seat.Thickness / 2), baseMid + up * seat.Length), "hole straight out from the tube");
+            Check(tab.IsFixed(), "tab is fixed");
+            Check(File.Exists(Path.Combine(dir, "Tab-Seat-1.SLDPRT")), "Tab-Seat-1.SLDPRT saved next to the assembly");
+
+            Step("Tab insert: contoured seat tab, across the tube (side facing +Z)");
+            m = PickFace(app, asm, -0.08, y0, z0 + r); // side of the tube facing +Z
+            if (m != null)
+            {
+                TabInputs fit = TabInputs.Defaults(TabUse.Seat); // B = 0.75 in fits the 1 in tube
+                fit.TubeDiameter = 2 * r;
+                fit.ContourTubeDiameter = 2 * r;
+                Check(!TabRules.Check(fit).Any(i => i.Level == TabIssueLevel.Error), "contoured seat tab is buildable");
+                tab = InsertTab(app, asm, fit, m, TabOrientation.AlongTube); // contour forces across
+                double c = Math.Sqrt(r * r - fit.BaseWidth * fit.BaseWidth / 4);
+                double depth = fit.DoubleShear ? 2 * fit.Thickness + fit.TabGap : fit.Thickness;
+                Vec3 foot = new Vec3(m.Pick.X, y0, z0);
+                Vec3 outward = (m.Pick - foot).Unit();
+                Check(outward.Z > 0.99, "picked the side facing +Z");
+                Check(Maps(app, tab, new Vec3(0, -c, depth / 2), foot), "base arc center on the tube axis");
+                Check(Maps(app, tab, new Vec3(0, fit.Length, depth / 2), foot + outward * (c + fit.Length)), "hole points away from the tube");
+                Vec3 corner = Map(app, tab, new Vec3(fit.BaseWidth / 2, 0, 0));
+                double cornerRadius = Math.Sqrt((corner.Y - y0) * (corner.Y - y0) + (corner.Z - z0) * (corner.Z - z0));
+                Check(Math.Abs(cornerRadius - r) < 1e-6, $"base corners on the tube surface ({cornerRadius:F5})");
+
+                TabInputs lap = TabInputs.Defaults(TabUse.LapBelt);
+                lap.TubeDiameter = 2 * r;
+                lap.ContourTubeDiameter = 2 * r;
+                Check(TabRules.Check(lap).Any(i => i.Level == TabIssueLevel.Error), "lap belt base wider than the tube cannot be contoured (blocked in the dialog)");
+            }
+
+            Step("Tab insert: square tube, flat face");
+            string boxPath = CreateBoxPart(app, dir, "Square", 0.025);
+            int errs = 0;
+            app.ActivateDoc3(asm.GetTitle(), false, 0, ref errs);
+            IComponent2 square = AddComponent(asm, boxPath, 0.5); // box 25 x 20 x 10 mm
+            double[] squareBox = (double[])square.GetBox(false, false);
+            ShowBox(squareBox);
+            double topZ = squareBox[5];
+            m = PickFace(app, asm, (squareBox[0] + squareBox[3]) / 2, (squareBox[1] + squareBox[4]) / 2, topZ);
+            Check(m != null && !m.IsRound, "picked face read as flat");
+            if (m != null)
+            {
+                Check(Math.Abs(m.Normal.Z - 1) < 1e-6, $"normal +Z ({m.Normal.X:F3}, {m.Normal.Y:F3}, {m.Normal.Z:F3})");
+                Check(Math.Abs(Math.Abs(m.Axis.X) - 1) < 1e-6, "length along the 25 mm edge (X)");
+                tab = InsertTab(app, asm, seat, m, TabOrientation.AlongTube);
+                Vec3 pick = m.Pick;
+                Check(Maps(app, tab, new Vec3(0, seat.Length, seat.Thickness / 2), new Vec3(pick.X, pick.Y, pick.Z + seat.Length)), "tab stands on the top face, hole straight up");
+            }
+            asm.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errs, ref errs);
+        }
+
+        private static IComponent2 InsertTab(ISldWorks app, IModelDoc2 asm, TabInputs t, TabMount m, TabOrientation o)
+        {
+            IModelDoc2 part = TabBuilder.Build(app, t);
+            return TabInserter.Insert(app, asm, part, t.Use, TabPlacement.Place(t, m, o));
+        }
+
+        private static TabMount PickFace(ISldWorks app, IModelDoc2 asm, double x, double y, double z)
+        {
+            int errs = 0;
+            app.ActivateDoc3(asm.GetTitle(), false, 0, ref errs);
+            asm.ClearSelection2(true);
+            bool selected = asm.Extension.SelectByID2("", "FACE", x, y, z, false, 0, null, 0);
+            Check(selected, $"face selected at ({x:F4}, {y:F4}, {z:F4})");
+            return selected ? TabInserter.ReadSelection(app, out _) : null;
+        }
+
+        private static void ShowBox(double[] b) =>
+            Console.WriteLine($"  box x {b[0]:F4}..{b[3]:F4}, y {b[1]:F4}..{b[4]:F4}, z {b[2]:F4}..{b[5]:F4}");
+
+        /// <summary>A point in the component's part coordinates, in assembly coordinates.</summary>
+        private static Vec3 Map(ISldWorks app, IComponent2 component, Vec3 part)
+        {
+            var mu = (IMathUtility)app.GetMathUtility();
+            var pt = (IMathPoint)mu.CreatePoint(new[] { part.X, part.Y, part.Z });
+            var r = (double[])((IMathPoint)pt.MultiplyTransform(component.Transform2)).ArrayData;
+            return new Vec3(r[0], r[1], r[2]);
+        }
+
+        private static bool Maps(ISldWorks app, IComponent2 component, Vec3 part, Vec3 expected)
+        {
+            Vec3 got = Map(app, component, part);
+            bool ok = (got - expected).Length < 1e-6;
+            if (!ok)
+            {
+                Console.WriteLine($"  expected ({expected.X:F5}, {expected.Y:F5}, {expected.Z:F5}) got ({got.X:F5}, {got.Y:F5}, {got.Z:F5})");
+            }
+            return ok;
+        }
+
+        private static string CreateTubePart(ISldWorks app, string dir, string name, double radius, double length)
+        {
+            IModelDoc2 doc = NewPart(app);
+            Planes(doc).First().Select2(false, 0); // Front plane: extrude along part Z
+            doc.SketchManager.InsertSketch(true);
+            doc.SketchManager.CreateCircleByRadius(0, 0, 0, radius);
+            doc.SketchManager.CreateCircleByRadius(0, 0, 0, radius - 0.065 * Units.MetersPerInch);
+            doc.SketchManager.InsertSketch(true);
+            ((IFeature)doc.FeatureByPositionReverse(0)).Select2(false, 0);
+            IFeature extrude = doc.FeatureManager.FeatureExtrusion2(
+                true, false, false, (int)swEndConditions_e.swEndCondBlind, 0, length, 0,
+                false, false, false, false, 0, 0, false, false, false, false,
+                true, true, true, 0, 0, false);
+            if (extrude == null)
+            {
+                throw new InvalidOperationException("Tube extrusion failed");
+            }
+            return Save(doc, Path.Combine(dir, name + ".SLDPRT"));
         }
 
         // ---- Add-in config (issue #9) ----
