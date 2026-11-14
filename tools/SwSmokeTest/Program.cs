@@ -8,6 +8,7 @@ using Lbr.CadTools.AddIn.Features.AddInConfig;
 using Lbr.CadTools.AddIn.Features.AutoSave;
 using Lbr.CadTools.AddIn.Features.BatchExport;
 using Lbr.CadTools.AddIn.Features.FixComponents;
+using Lbr.CadTools.AddIn.Features.Naming;
 using Lbr.CadTools.AddIn.Features.SketchPoints;
 using Lbr.CadTools.AddIn.Features.Suspension;
 using Lbr.CadTools.AddIn.Features.Tabs;
@@ -131,6 +132,8 @@ namespace Lbr.CadTools.SmokeTest
                     TabTest(app);
                     CloseAll(app);
                     SuspensionTest(app, dir);
+                    CloseAll(app);
+                    NameCheckTest(app, dir);
                 }
                 finally
                 {
@@ -631,6 +634,55 @@ namespace Lbr.CadTools.SmokeTest
 
             doc.Extension.get_CustomPropertyManager("").Get6("Description", false, out _, out string description, out _, out _);
             Check(description == TabRules.Describe(t), $"Description property set ({description})");
+        }
+
+        // ---- Name Check (issue #6) ----
+
+        private static void NameCheckTest(ISldWorks app, string dir)
+        {
+            string folder = Path.Combine(dir, "Naming");
+            Directory.CreateDirectory(Path.Combine(folder, "Old"));
+
+            Step("Name Check: assembly with good, wrong-REV, and badly named files");
+            string hoop = CreateBoxPart(app, folder, "CHA_0002_FrontHoop_REV01_V01", 0.02);
+            string rear = CreateBoxPart(app, folder, "CHA_0003_RearHoop_REV02_V01", 0.02);
+            string bad = CreateBoxPart(app, folder, "Part7", 0.02);
+            string pan = CreateBoxPart(app, folder, "ERG_0005_SeatPan_REV01_V01", 0.02);
+
+            IModelDoc2 sub = NewAssembly(app);
+            AddComponent(sub, pan, 0);
+            string subPath = Save(sub, Path.Combine(folder, "aERG_0004_Seat_REV01_V01.SLDASM"));
+
+            // Names only matter for these: a drawing of the hoop (same REV), an old-REV drawing, and an old part.
+            File.WriteAllText(Path.Combine(folder, "dCHA_0002_FrontHoop_REV01_V01.SLDDRW"), "");
+            File.WriteAllText(Path.Combine(folder, "dCHA_0002_FrontHoop_REV00_V03.SLDDRW"), "");
+            File.WriteAllText(Path.Combine(folder, "Old", "CHA_0040_OldFrame_REV00_V09.SLDPRT"), "");
+
+            IModelDoc2 top = NewAssembly(app);
+            AddComponent(top, hoop, 0);
+            AddComponent(top, rear, 0.05);
+            AddComponent(top, bad, 0.10);
+            AddComponent(top, subPath, 0.15);
+            Save(top, Path.Combine(folder, "aCHA_0001_Frame_REV01_V01.SLDASM"));
+
+            NameScanner.Result scan = NameScanner.Scan(top);
+            Console.WriteLine($"  files: {string.Join(", ", scan.Files.Select(f => f.BaseName))}");
+            Check(scan.Top.BaseName == "aCHA_0001_Frame_REV01_V01" && scan.Top.Kind == CadFileKind.Assembly, "top assembly read");
+            Check(scan.Files.Count == 6, $"4 parts, 1 subassembly, 1 drawing (got {scan.Files.Count})");
+            Check(scan.Files.Any(f => f.BaseName == "ERG_0005_SeatPan_REV01_V01"), "part inside the subassembly found");
+            Check(scan.Files.Any(f => f.BaseName == "dCHA_0002_FrontHoop_REV01_V01" && f.Kind == CadFileKind.Drawing), "same-REV drawing joins the check");
+            Check(!scan.Files.Any(f => f.BaseName.Contains("REV00")), "old-REV drawing left out");
+
+            List<NameCheck> checks = NamingConvention.CheckAssembly(scan.Top, scan.Files, NamingConvention.DefaultTeams.Keys.ToList());
+            foreach (NameCheck c in checks.Where(c => !c.Ok))
+            {
+                Console.WriteLine($"  fix {c.File.BaseName}: {string.Join(" ", c.Problems)}");
+            }
+            Check(checks.Single(c => c.File.BaseName.StartsWith("CHA_0003")).Problems.Any(p => p.Contains("REV02 does not match")), "wrong REV flagged");
+            Check(!checks.Single(c => c.File.BaseName == "Part7").Ok, "Part7 flagged");
+            Check(checks.Count(c => !c.Ok) == 2, "only those two need fixing");
+            Check(NamingConvention.NextNumber("CHA", scan.AllNames) == 41, "next CHA number counts the Old folder (0041)");
+            Check(NamingConvention.NextNumber("ERG", scan.AllNames) == 6, "next ERG number is 0006");
         }
 
         // ---- Add-in config (issue #9) ----

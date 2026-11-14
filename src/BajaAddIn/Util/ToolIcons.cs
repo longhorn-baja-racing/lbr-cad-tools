@@ -20,6 +20,7 @@ namespace Lbr.CadTools.AddIn.Util
         Settings,
         About,
         Guide,
+        NameCheck,
     }
 
     /// <summary>
@@ -74,6 +75,7 @@ namespace Lbr.CadTools.AddIn.Util
                         case ToolIcon.Settings: Gear(p); break;
                         case ToolIcon.About: Info(p); break;
                         case ToolIcon.Guide: Book(p); break;
+                        case ToolIcon.NameCheck: NameTag(p); break;
                     }
                 }
             }
@@ -336,6 +338,24 @@ namespace Lbr.CadTools.AddIn.Util
             using (Pen ground = p.InkPen(7))
             {
                 p.G.DrawLine(ground, 14, 89, 86, 89);
+            }
+        }
+
+        /// <summary>Name tag (label with a string hole) carrying a check mark.</summary>
+        private static void NameTag(Painter p)
+        {
+            using (var tag = new GraphicsPath())
+            {
+                tag.AddPolygon(new[]
+                {
+                    new PointF(10, 50), new PointF(34, 22), new PointF(88, 22), new PointF(88, 78), new PointF(34, 78),
+                });
+                p.G.FillPath(p.Ink, tag);
+            }
+            p.Circle(p.Cut, 30, 50, 6.5f);
+            using (Pen check = p.CutPen(10))
+            {
+                p.G.DrawLines(check, new[] { new PointF(46, 51), new PointF(58, 63), new PointF(78, 37) });
             }
         }
 

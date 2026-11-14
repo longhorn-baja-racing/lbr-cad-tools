@@ -32,6 +32,7 @@ The tab is split into sections, each with its own icon color. The same tools are
 | Button | What it does |
 |---|---|
 | **Batch Export** | Exports the active part, assembly (plus every unique component and their drawings), or drawing to STEP AP214, IGES, Parasolid, STL, PDF, DXF, and sheet metal flat pattern DXF. Files are named by part number. For large unattended folder jobs, the built-in SolidWorks Task Scheduler "Export Files" task also works. |
+| **Name Check** | Checks the open document and every file an assembly uses against the team naming convention `[a\|d][TEAM]_####_[PartName]_REV##_V##` (e.g. `aDYN_0006_ControlArmLeft_REV01_V02`): wrong prefix, unknown team, a number used twice, parts on a different REV than the assembly. Shows the next free number per team and builds correct names to copy. Never renames files. Team codes are in [Settings](#settings). |
 | **Auto-Save** | Saves modified documents on a timer (SolidWorks Auto-recover only writes recovery copies). Skips never-saved and read-only files, and waits while a command or sketch is open. |
 
 ### Help and Setup
@@ -47,8 +48,7 @@ Already built into SolidWorks, so not planned: Hide All Sketches, Merge Sketches
 
 | Tool | Status |
 |---|---|
-| Parametric Part Numbering | Needs the team's numbering scheme (#16) |
-| Chassis: Ordered Tube Notcher | Needs the frame modeling method (#17) |
+| Chassis: Ordered Tube Notcher | Next up; the frame uses weldment structural members (#11) |
 | Dynamics: live Suspension Monitor | Suspension Check in a Task Pane that updates while you drag (#12); point names to be agreed with Dynamics |
 | Surface Copier | Waiting to hear what Offset Surface at 0 distance is missing (#10) |
 | Manufacturing: Auto Drawing Generator | Flat pattern DXFs are in Batch Export; drawings are a stretch goal (#13) |
@@ -115,6 +115,9 @@ The add-in keeps its settings in `%LOCALAPPDATA%\LBR CAD Tools\settings.json`. O
     "upAxis": "+Y",
     "tireRadiusInches": 11.5
   },
+  "naming": {
+    "teams": { "CHA": "Chassis", "DYN": "Dynamics", "ERG": "Ergonomics", "POW": "Powertrain" }
+  },
   "commands": {
     "hidden": ["Import Points", "Export Points"]
   },
@@ -128,6 +131,7 @@ The add-in keeps its settings in `%LOCALAPPDATA%\LBR CAD Tools\settings.json`. O
 - `commands.hidden`: buttons to leave off the tab. Takes effect at the next SolidWorks start. Settings cannot be hidden.
 - `addIns.load` / `addIns.unload`: other add-ins to load or unload when SolidWorks starts, by title (as in Tools -> Add-Ins) or by DLL path (write `\\` for each `\`).
 - `autoSave`: also set by the **Auto-Save** button.
+- `naming.teams`: team codes Name Check accepts (3 capital letters) and their names. Add a team here when a new sub-team starts naming files.
 - `suspension`: which model axes point forward and up (default: the car's nose shows in the Front view, Y up), and the loaded tire radius used for the contact patch.
 
 ## Contributing and Requests

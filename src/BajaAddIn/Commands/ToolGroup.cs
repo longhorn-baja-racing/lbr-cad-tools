@@ -48,7 +48,7 @@ namespace Lbr.CadTools.AddIn.Commands
                 case ToolGroup.VehicleDesign: return "Rule-checked parts and geometry checks for the car.";
                 case ToolGroup.SketchPoints: return "Move point data between sketches and CSV files (hardpoints, test data).";
                 case ToolGroup.Assembly: return "Fix or float every component at once, and undo it.";
-                case ToolGroup.Files: return "Export and save files without the busywork.";
+                case ToolGroup.Files: return "Export, save, and name files without the busywork.";
                 default: return "This guide, settings, and version information.";
             }
         }

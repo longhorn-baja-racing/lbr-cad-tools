@@ -46,6 +46,7 @@ namespace Lbr.CadTools.AddIn.Features.AddInConfig
             AddKey(keys, "addIns.unload", "Add-ins to unload when SolidWorks starts, the same way.");
             AddKey(keys, "autoSave", "Also set by the Auto-Save button.");
             AddKey(keys, "suspension", "Model axes and tire radius used by Suspension Check.");
+            AddKey(keys, "naming", "Team codes for Name Check, e.g. \"teams\": { \"CHA\": \"Chassis\" }.");
             AddSection("What you can set", null, keys);
 
             // ---- Problems ----
