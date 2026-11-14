@@ -82,7 +82,7 @@ To update, run the newer Setup and click **Update** (settings are kept). To remo
 
 ## Requirements
 
-- Windows with SolidWorks installed (built and tested on SolidWorks 2026)
+- Windows with SolidWorks 2025 or newer. Developed on 2026; release builds check (tools/ApiCheck) that no SolidWorks API newer than 2025 is used.
 - To build: .NET SDK 8 or newer and Visual Studio 2022 (optional). The add-in targets .NET Framework 4.8, which SolidWorks requires.
 - Administrator rights to register the add-in
 

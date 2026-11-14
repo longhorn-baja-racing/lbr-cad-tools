@@ -159,14 +159,13 @@ namespace Lbr.CadTools.Setup
             detail.Text = "Adds the LBR CAD Tools tab to SolidWorks in parts, assemblies, and drawings.\n" +
                           $"Installs to {Installer.InstallDir}. Your settings are kept.";
             int? have = Installer.NewestSolidWorksYear();
-            int built = Installer.BuiltForYear();
             if (have == null)
             {
                 detail.Text += "\nNo SolidWorks installation was found on this computer.";
             }
-            else if (have < built)
+            else if (have < Installer.MinimumYear)
             {
-                detail.Text += $"\nBuilt for SolidWorks {built}; you have {have}. Most tools should work.";
+                detail.Text += $"\nNeeds SolidWorks {Installer.MinimumYear} or newer; this computer has {have}. Some tools may not work.";
             }
 
             steps.ForeColor = Muted;
