@@ -1,3 +1,4 @@
+using System;
 using System.Drawing;
 using System.Drawing.Text;
 using System.Windows.Forms;
@@ -130,6 +131,21 @@ namespace Lbr.CadTools.AddIn.Util
             AutoSize = true;
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
             ResumeLayout(false);
+        }
+
+        /// <summary>Keeps tall dialogs on small screens: cap the height to the screen and scroll the content.</summary>
+        protected override void OnLoad(System.EventArgs e)
+        {
+            base.OnLoad(e);
+            Rectangle area = Screen.FromControl(this).WorkingArea;
+            if (Height > area.Height)
+            {
+                Size full = Size;
+                AutoSize = false;
+                AutoScroll = true;
+                Size = new Size(full.Width + SystemInformation.VerticalScrollBarWidth, area.Height);
+                Location = new Point(Math.Max(area.Left, Left), area.Top);
+            }
         }
 
         /// <summary>Section color of this tool.</summary>

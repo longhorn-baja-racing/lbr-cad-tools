@@ -17,6 +17,22 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
     /// </summary>
     internal sealed class TabDialog : ToolForm
     {
+        /// <summary>What was picked in the assembly, for the Placement section.</summary>
+        internal sealed class PlacementOffer
+        {
+            public string AssemblyTitle { get; set; }
+
+            /// <summary>Saved assemblies only: the tab part is saved next to it.</summary>
+            public bool AssemblySaved { get; set; }
+
+            public string ComponentName { get; set; }
+
+            public bool Round { get; set; }
+
+            /// <summary>Round tube outside diameter in meters (0 for flat faces).</summary>
+            public double Diameter { get; set; }
+        }
+
         private static TabInputs last;
         private static LengthUnit lastUnit = LengthUnit.Inch;
 
@@ -31,15 +47,24 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
         private readonly Label rule;
         private readonly Label checks;
         private readonly Button generate;
+        private readonly PlacementOffer offer;
+        private readonly CheckBox insert = new CheckBox { AutoSize = true, Checked = true };
+        private readonly RadioButton along = new RadioButton { Text = "Along the tube", AutoSize = true, Checked = true };
+        private readonly RadioButton across = new RadioButton { Text = "Across the tube", AutoSize = true };
+        private Label placementNote;
         private LengthUnit shownUnit;
         private bool loading;
 
-        public TabDialog()
+        /// <param name="offer">A tube face picked in an assembly, or null to only make the part.</param>
+        public TabDialog(PlacementOffer offer = null)
             : base("Mounting Tab",
                 "Makes a welded bolt tab part sized from the Baja SAE B.12.2 table and checks the rules as you type. " +
-                "The new part opens unsaved.",
+                (offer == null
+                    ? "The new part opens unsaved. Tip: select a tube face in an assembly first to insert the tab onto it."
+                    : "It is saved next to the assembly and inserted on the tube you selected."),
                 ToolIcon.MountingTab, ToolGroup.VehicleDesign, 560)
         {
+            this.offer = offer;
             SuspendLayout();
 
             // ---- What the tab is for ----
@@ -80,6 +105,23 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             tube.AddWide(contour);
             AddSection("Tube and spacing", "The tube the tab is welded to.", tube);
 
+            // ---- Placement (only with a picked tube face) ----
+            if (offer != null)
+            {
+                insert.Text = $"Insert into {offer.AssemblyTitle} on {offer.ComponentName ?? "the selected face"}";
+                var place = new FieldGrid(150, 220);
+                place.AddWide(insert);
+                place.Add("Base line runs", Row(along, across));
+                placementNote = Note("", ContentWidth);
+                placementNote.Margin = new Padding(0, 4, 0, 0);
+                AddSection("Placement",
+                    (offer.Round ? "Round tube" : "Flat face") + " selected. The tab is centered where you clicked and fixed in place; " +
+                    "drag it after unfixing (right-click > Float) to adjust.",
+                    place, placementNote);
+                insert.CheckedChanged += (s, e) => UpdateChecks();
+                along.CheckedChanged += (s, e) => UpdateChecks();
+            }
+
             // ---- Rule check ----
             checks = StatusBox(ContentWidth);
             AddSection("Rule check", null, checks);
@@ -93,7 +135,12 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             AcceptButton = generate;
             CancelButton = cancel;
 
-            Fill(last ?? TabInputs.Defaults(TabUse.LapBelt), lastUnit);
+            TabInputs start = last ?? TabInputs.Defaults(TabUse.LapBelt);
+            if (offer != null && offer.Round && offer.Diameter > 0)
+            {
+                start.TubeDiameter = offer.Diameter; // measured from the picked tube
+            }
+            Fill(start, lastUnit);
 
             use.SelectedIndexChanged += (s, e) =>
             {
@@ -120,6 +167,11 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
         }
 
         public TabInputs Inputs { get; private set; }
+
+        /// <summary>True when the tab should go into the assembly.</summary>
+        public bool InsertIntoAssembly => offer != null && offer.AssemblySaved && insert.Checked;
+
+        public TabOrientation Orientation => across.Checked ? TabOrientation.AcrossTube : TabOrientation.AlongTube;
 
         private TabUse SelectedUse => TabPreset.All[Math.Max(0, use.SelectedIndex)].Use;
 
@@ -224,6 +276,7 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             }
             gapFromTube.Enabled = dbl.Checked;
             fields["Gap"].Enabled = dbl.Checked && !gapFromTube.Checked;
+            UpdatePlacement();
 
             if (!TryRead(out TabInputs t))
             {
@@ -247,6 +300,50 @@ namespace Lbr.CadTools.AddIn.Features.Tabs
             else
             {
                 SetStatus(checks, "Does not meet B.12.2 (you can still generate it):\n" + Bullets(issues), Caution, CautionBack);
+            }
+        }
+
+        private void UpdatePlacement()
+        {
+            if (offer == null)
+            {
+                return;
+            }
+            if (!offer.AssemblySaved)
+            {
+                insert.Checked = false;
+                insert.Enabled = false;
+                placementNote.Text = "Save the assembly first: the tab part is saved in the same folder. For now the tab opens as a separate part.";
+                placementNote.ForeColor = Caution;
+                along.Enabled = across.Enabled = false;
+                return;
+            }
+            bool on = insert.Checked;
+            bool contoured = contour.Checked && offer.Round;
+            along.Enabled = on && !contoured;
+            across.Enabled = on;
+            if (contoured && along.Checked)
+            {
+                across.Checked = true;
+            }
+            placementNote.ForeColor = Muted;
+            if (!on)
+            {
+                placementNote.Text = "The tab opens as a separate, unsaved part.";
+            }
+            else if (contoured)
+            {
+                placementNote.Text = "A contoured base wraps around the tube, so the tab goes across it.";
+            }
+            else if (offer.Round && dbl.Checked && gapFromTube.Checked && along.Checked)
+            {
+                placementNote.Text = "The double shear pair straddles the tube: one plate on each side, base level with the tube center.";
+            }
+            else
+            {
+                placementNote.Text = across.Checked
+                    ? "The plate stands square to the tube; the base sits on the tube surface."
+                    : "The base sits on the tube surface and runs along it.";
             }
         }
 
