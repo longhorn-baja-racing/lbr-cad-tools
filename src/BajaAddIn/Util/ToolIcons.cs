@@ -22,6 +22,7 @@ namespace Lbr.CadTools.AddIn.Util
         Guide,
         NameCheck,
         Notcher,
+        Drawings,
     }
 
     /// <summary>
@@ -78,6 +79,7 @@ namespace Lbr.CadTools.AddIn.Util
                         case ToolIcon.Guide: Book(p); break;
                         case ToolIcon.NameCheck: NameTag(p); break;
                         case ToolIcon.Notcher: Cope(p); break;
+                        case ToolIcon.Drawings: DrawingSheet(p); break;
                     }
                 }
             }
@@ -364,6 +366,23 @@ namespace Lbr.CadTools.AddIn.Util
             // Cross tube with its bore, a small gap inside the bite.
             p.Circle(p.Ink, cx, cy, bite - 5);
             p.Circle(p.Cut, cx, cy, bite - 13);
+        }
+
+        /// <summary>Landscape drawing sheet: two views and a title block in the corner.</summary>
+        private static void DrawingSheet(Painter p)
+        {
+            using (GraphicsPath sheet = RoundedRect(10, 20, 80, 60, 4))
+            {
+                p.G.FillPath(p.Ink, sheet);
+            }
+            using (Pen line = p.CutPen(4))
+            {
+                line.StartCap = line.EndCap = LineCap.Flat;
+                p.G.DrawRectangle(line, 19, 42, 24, 18);  // front view
+                p.G.DrawRectangle(line, 19, 29, 24, 7);   // top view
+                p.G.DrawRectangle(line, 49, 42, 9, 18);   // right view
+            }
+            p.G.FillRectangle(p.Cut, 62, 64, 22, 10);     // title block
         }
 
         /// <summary>Name tag (label with a string hole) carrying a check mark.</summary>
